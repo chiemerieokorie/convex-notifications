@@ -2,31 +2,37 @@
 
 Semantic versioning roadmap for `convex-notifications`.
 
-## v0.1.0 - Foundation
+## v0.1.0 - Foundation (current)
 
-- Component schema (notifications, preferences, deduplication, deliveryLog)
-- `createNotificationsApi()` factory with auth injection
-- `createNotification<T>()` factory (templates receive only `data`, engine resolves addresses)
-- Transactional flag (bypasses user preferences)
-- Idempotency via `deduplicationKey`
-- 3 channel adapters: push (Expo), email (Resend), SMS (Twilio)
-- Inbox: `list` (paginated), `unreadCount`, `markRead` (timestamp-based), `markAllRead`, `archive`
-- Event-level preference CRUD
-- Push token passthrough to expo-push-notifications component
-- React hooks for inbox and preferences
-- Example app with tests
+- [x] Component schema (notifications, preferences, deduplication, deliveryLog)
+- [x] `Notifications` class with auth injection (constructor pattern)
+- [x] `NotificationDefinition<T>` typed event definitions with per-channel templates
+- [x] `api()` method for plug-and-play query/mutation exports
+- [x] Transactional flag (bypasses user preferences)
+- [x] Idempotency via `deduplicationKey`
+- [x] Inbox: `list` (paginated), `unreadCount`, `markRead`, `markAllRead`, `archive`
+- [x] 3-level preference resolution (global > category > event)
+- [x] `html?` field on email templates (React Email compatible)
+- [x] Example app with 35 integration tests
+- [x] CI: test/lint/typecheck with release gated on passing tests
+- [ ] Channel adapters: push (Expo), email (Resend), SMS (Twilio)
+- [ ] Push token registration passthrough
+- [ ] React hooks for inbox and preferences
 
-## v0.2.0 - Preference Hierarchy + Categories
+## v0.2.0 - Channel Adapters
 
-- 3-level preference resolution: global > category > event
-- Notification categories (runtime grouping of event types)
-- `useCategoryPreferences()` hook for grouped settings UI
+- Expo push adapter (passthrough to expo-push-notifications component)
+- Resend email adapter with React Email rendering
+- Twilio SMS adapter
+- Push token registration and management
+- Delivery log status tracking per channel
 
-## v0.3.0 - React Email + Templates
+## v0.3.0 - React Hooks + Client SDK
 
-- `emailComponent` field on event definitions for React Email JSX
-- Node action renderer for email templates
-- Email template helpers and utilities
+- `useNotifications()` hook (list, unreadCount, realtime)
+- `usePreferences()` hook for settings UI
+- `useCategoryPreferences()` hook for grouped settings
+- Optimistic updates for markRead/archive
 
 ## v0.4.0 - Delivery Reliability
 
