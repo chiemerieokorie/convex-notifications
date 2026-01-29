@@ -1,58 +1,141 @@
-import { action, mutation, query } from "./_generated/server.js";
 import { components } from "./_generated/api.js";
-import { exposeApi } from "convex-notifications";
+import { query, mutation } from "./_generated/server.js";
+import { Notifications } from "convex-notifications";
+import type { NotificationDefinition } from "convex-notifications";
 import { v } from "convex/values";
-import { Auth } from "convex/server";
+import type { Auth } from "convex/server";
 
-// Environment variables aren't available in the component,
-// so we need to pass it in as an argument to the component when necessary.
-const BASE_URL = process.env.BASE_URL ?? "https://pirate.monkeyness.com";
-
-export const addComment = mutation({
-  args: { text: v.string(), targetId: v.string() },
-  handler: async (ctx, args) => {
-    return await ctx.runMutation(components.notifications.lib.add, {
-      text: args.text,
-      targetId: args.targetId,
-      userId: await getAuthUserId(ctx),
-    });
-  },
-});
-
-export const listComments = query({
-  args: { targetId: v.string() },
-  handler: async (ctx, args) => {
-    return await ctx.runQuery(components.notifications.lib.list, {
-      targetId: args.targetId,
-    });
-  },
-});
-
-export const translateComment = action({
-  args: { commentId: v.string() },
-  handler: async (ctx, args) => {
-    return await ctx.runAction(components.notifications.lib.translate, {
-      baseUrl: BASE_URL,
-      commentId: args.commentId,
-    });
-  },
-});
-
-// Here is an alternative way to use the component's methods directly by re-exporting
-// the component's API:
-export const { list, add, translate } = exposeApi(components.notifications, {
-  auth: async (ctx, operation) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null && operation.type !== "read") {
-      throw new Error("Unauthorized");
-    }
-    return userId;
-  },
-  baseUrl: BASE_URL,
-});
-
-// You can also register HTTP routes for the component. See http.ts for an example.
+// --- Setup ---
 
 async function getAuthUserId(ctx: { auth: Auth }) {
   return (await ctx.auth.getUserIdentity())?.subject ?? "anonymous";
 }
+
+const notifications = new Notifications(components.notifications, {
+  auth: getAuthUserId,
+});
+
+// --- Notification Definitions ---
+
+const commentReplyDef: NotificationDefinition<{
+  commenterName: string;
+  postTitle: string;
+}> = {
+  event: "comment.reply",
+  dataValidator: v.object({
+    commenterName: v.string(),
+    postTitle: v.string(),
+  }),
+  category: "social",
+  channels: {
+    inbox: {
+      title: (data) => `${data.commenterName} replied`,
+      body: (data) => `New reply on "${data.postTitle}"`,
+    },
+    email: {
+      subject: (data) => `${data.commenterName} replied to your comment`,
+      body: (data) =>
+        `${data.commenterName} replied on "${data.postTitle}".`,
+    },
+    push: {
+      title: (_data) => "New reply",
+      body: (data) =>
+        `${data.commenterName} replied on "${data.postTitle}"`,
+    },
+  },
+};
+
+const welcomeDef: NotificationDefinition<{ userName: string }> = {
+  event: "user.welcome",
+  dataValidator: v.object({ userName: v.string() }),
+  category: "onboarding",
+  channels: {
+    inbox: {
+      title: (data) => `Welcome, ${data.userName}!`,
+      body: () => "Thanks for joining. Here's how to get started.",
+    },
+    email: {
+      subject: (data) => `Welcome to the app, ${data.userName}`,
+      body: (data) => `Hi ${data.userName}, welcome aboard!`,
+    },
+  },
+};
+
+// --- Exported API ---
+
+export const list = query({
+  args: {
+    limit: v.optional(v.number()),
+    cursor: v.optional(v.number()),
+  },
+  handler: (ctx, args) => notifications.list(ctx, args),
+});
+
+export const unreadCount = query({
+  args: {},
+  handler: (ctx) => notifications.unreadCount(ctx),
+});
+
+export const markRead = mutation({
+  args: { notificationId: v.string() },
+  handler: (ctx, args) => notifications.markRead(ctx, args.notificationId),
+});
+
+export const markAllRead = mutation({
+  args: {},
+  handler: (ctx) => notifications.markAllRead(ctx),
+});
+
+export const archive = mutation({
+  args: { notificationId: v.string() },
+  handler: (ctx, args) => notifications.archive(ctx, args.notificationId),
+});
+
+export const getPreferences = query({
+  args: {},
+  handler: (ctx) => notifications.getPreferences(ctx),
+});
+
+export const updatePreference = mutation({
+  args: {
+    level: v.union(
+      v.literal("global"),
+      v.literal("category"),
+      v.literal("event"),
+    ),
+    key: v.optional(v.string()),
+    channel: v.string(),
+    enabled: v.boolean(),
+  },
+  handler: (ctx, args) => notifications.updatePreference(ctx, args),
+});
+
+// --- Send mutations ---
+
+export const sendTestNotification = mutation({
+  args: {
+    userId: v.optional(v.string()),
+    data: v.object({ userName: v.string() }),
+  },
+  handler: async (ctx, args) => {
+    const userId = args.userId ?? (await getAuthUserId(ctx));
+    return notifications.send(ctx, welcomeDef, { userId, data: args.data });
+  },
+});
+
+export const sendCommentReply = mutation({
+  args: {
+    userId: v.optional(v.string()),
+    data: v.object({
+      commenterName: v.string(),
+      postTitle: v.string(),
+    }),
+  },
+  handler: async (ctx, args) => {
+    const userId = args.userId ?? (await getAuthUserId(ctx));
+    return notifications.send(ctx, commentReplyDef, {
+      userId,
+      data: args.data,
+    });
+  },
+});

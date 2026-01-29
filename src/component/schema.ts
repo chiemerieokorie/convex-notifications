@@ -2,9 +2,53 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 export default defineSchema({
-  comments: defineTable({
-    text: v.string(),
-    userId: v.string(), // Note: you can't use v.id referring to external tables
-    targetId: v.string(),
-  }).index("targetId", ["targetId"]),
+  notifications: defineTable({
+    userId: v.string(),
+    event: v.string(),
+    title: v.string(),
+    body: v.string(),
+    data: v.optional(v.any()),
+    readAt: v.optional(v.number()),
+    archivedAt: v.optional(v.number()),
+    transactional: v.optional(v.boolean()),
+  })
+    .index("by_userId", ["userId", "_creationTime"])
+    .index("by_userId_unread", ["userId", "readAt"]),
+
+  preferences: defineTable({
+    userId: v.string(),
+    level: v.union(
+      v.literal("global"),
+      v.literal("category"),
+      v.literal("event"),
+    ),
+    key: v.optional(v.string()),
+    channel: v.string(),
+    enabled: v.boolean(),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_userId_level_key", ["userId", "level", "key"]),
+
+  deduplication: defineTable({
+    key: v.string(),
+    expiresAt: v.number(),
+  })
+    .index("by_key", ["key"])
+    .index("by_expiresAt", ["expiresAt"]),
+
+  deliveryLog: defineTable({
+    notificationId: v.id("notifications"),
+    channel: v.string(),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("sent"),
+      v.literal("delivered"),
+      v.literal("failed"),
+    ),
+    error: v.optional(v.string()),
+    sentAt: v.optional(v.number()),
+    metadata: v.optional(v.any()),
+  })
+    .index("by_notificationId", ["notificationId"])
+    .index("by_status", ["status"]),
 });
