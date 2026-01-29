@@ -60,13 +60,14 @@ function SendDemo() {
     <div style={{ border: "1px solid #ccc", padding: "1rem", borderRadius: "8px", marginTop: "1rem" }}>
       <h3>Send Test Notifications</h3>
       <div style={{ display: "flex", gap: "0.5rem" }}>
-        <button onClick={() => sendWelcome({})}>Send Welcome</button>
+        <button onClick={() => sendWelcome({ data: { userName: "Demo User" } })}>Send Welcome</button>
         <button
           onClick={() =>
             sendReply({
-              toUserId: "anonymous",
-              commenterName: "Alice",
-              postTitle: "Example Post",
+              data: {
+                commenterName: "Alice",
+                postTitle: "Example Post",
+              },
             })
           }
         >

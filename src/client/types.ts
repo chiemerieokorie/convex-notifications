@@ -1,7 +1,7 @@
 import type { Auth } from "convex/server";
 import type { Validator } from "convex/values";
 
-export type NotificationsConfig = {
+export type NotificationsOptions = {
   auth: (ctx: { auth: Auth }) => Promise<string>;
   resolvers?: {
     email?: (ctx: { auth: Auth }, userId: string) => Promise<string | null>;

@@ -1,26 +1,20 @@
 import { describe, expect, test, vi, beforeEach, afterEach } from "vitest";
 import { anyApi, type ApiFromModules } from "convex/server";
 import { components, initConvexTest } from "./setup.test.js";
-import { createNotificationsApi, createNotification } from "./index.js";
+import { Notifications } from "./index.js";
+import type { NotificationDefinition } from "./types.js";
 import { v } from "convex/values";
+import { query, mutation } from "../component/_generated/server.js";
 
-// Create API
-export const {
-  list,
-  unreadCount,
-  markRead,
-  markAllRead,
-  archive,
-  getPreferences,
-  updatePreference,
-} = createNotificationsApi(components.notifications, {
+// Instantiate class
+const notifications = new Notifications(components.notifications, {
   auth: async (ctx) => {
     return (await ctx.auth.getUserIdentity())?.subject ?? "anonymous";
   },
 });
 
-// Create a test notification event
-const testEvent = createNotification(components.notifications, {
+// Test notification definition
+const testEventDef: NotificationDefinition<{ message: string }> = {
   event: "test.event",
   dataValidator: v.object({ message: v.string() }),
   category: "testing",
@@ -34,9 +28,70 @@ const testEvent = createNotification(components.notifications, {
       body: (data) => data.message,
     },
   },
+};
+
+// Exported query/mutation wrappers (same pattern as example app)
+export const list = query({
+  args: { limit: v.optional(v.number()), cursor: v.optional(v.number()) },
+  handler: (ctx, args) => notifications.list(ctx, args),
 });
 
-export const send = testEvent.send;
+export const unreadCount = query({
+  args: {},
+  handler: (ctx) => notifications.unreadCount(ctx),
+});
+
+export const markRead = mutation({
+  args: { notificationId: v.string() },
+  handler: (ctx, args) => notifications.markRead(ctx, args.notificationId),
+});
+
+export const markAllRead = mutation({
+  args: {},
+  handler: (ctx) => notifications.markAllRead(ctx),
+});
+
+export const archive = mutation({
+  args: { notificationId: v.string() },
+  handler: (ctx, args) => notifications.archive(ctx, args.notificationId),
+});
+
+export const getPreferences = query({
+  args: {},
+  handler: (ctx) => notifications.getPreferences(ctx),
+});
+
+export const updatePreference = mutation({
+  args: {
+    level: v.union(
+      v.literal("global"),
+      v.literal("category"),
+      v.literal("event"),
+    ),
+    key: v.optional(v.string()),
+    channel: v.string(),
+    enabled: v.boolean(),
+  },
+  handler: (ctx, args) => notifications.updatePreference(ctx, args),
+});
+
+export const send = mutation({
+  args: {
+    userId: v.string(),
+    data: v.any(),
+    transactional: v.optional(v.boolean()),
+    deduplicationKey: v.optional(v.string()),
+    deduplicationTtlSeconds: v.optional(v.number()),
+  },
+  handler: (ctx, args) =>
+    notifications.send(ctx, testEventDef, {
+      userId: args.userId,
+      data: args.data as { message: string },
+      transactional: args.transactional,
+      deduplicationKey: args.deduplicationKey,
+      deduplicationTtlSeconds: args.deduplicationTtlSeconds,
+    }),
+});
 
 const testApi = (
   anyApi as unknown as ApiFromModules<{
