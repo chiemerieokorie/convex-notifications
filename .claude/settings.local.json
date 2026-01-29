@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(done)",
+      "Bash(for dir in /Users/chief/projects/convex-notifications/.examples/{expo-push-notifications,resend,twilio,workpool,rate-limiter})",
+      "Bash(then jq '.name, .dependencies | keys[]' \"$dir/package.json\")",
+      "Bash(fi:*)",
+      "WebFetch(domain:www.convex.dev)"
+    ]
+  }
+}
