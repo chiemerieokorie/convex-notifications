@@ -8,6 +8,8 @@
  * @module
  */
 
+import type * as batching from "../batching.js";
+import type * as cancellation from "../cancellation.js";
 import type * as delivery from "../delivery.js";
 import type * as inbox from "../inbox.js";
 import type * as notifications from "../notifications.js";
@@ -21,6 +23,8 @@ import type {
 import { anyApi, componentsGeneric } from "convex/server";
 
 const fullApi: ApiFromModules<{
+  batching: typeof batching;
+  cancellation: typeof cancellation;
   delivery: typeof delivery;
   inbox: typeof inbox;
   notifications: typeof notifications;

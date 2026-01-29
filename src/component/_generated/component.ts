@@ -9,10 +9,63 @@
  */
 
 import type { FunctionReference } from "convex/server";
+import type { ComponentApi as RateLimiterApi } from "@convex-dev/rate-limiter/_generated/component.js";
 
 export type ComponentApi<
   Name extends string | undefined = string | undefined,
 > = {
+  batching: {
+    getOrCreateBatch: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        batchKey: string;
+        event: string;
+        item: any;
+        userId: string;
+        windowMs: number;
+      },
+      { batchId: string; isNew: boolean },
+      Name
+    >;
+    flushBatch: FunctionReference<
+      "mutation",
+      "internal",
+      { batchId: string },
+      { event: string; items: any[]; userId: string } | null,
+      Name
+    >;
+    getPendingBatches: FunctionReference<
+      "query",
+      "internal",
+      { now: number },
+      any[],
+      Name
+    >;
+  };
+  cancellation: {
+    cancelByKey: FunctionReference<
+      "mutation",
+      "internal",
+      { key: string },
+      boolean,
+      Name
+    >;
+    checkCancelled: FunctionReference<
+      "query",
+      "internal",
+      { notificationId: string },
+      boolean,
+      Name
+    >;
+    storeCancellationKey: FunctionReference<
+      "mutation",
+      "internal",
+      { key: string; notificationId: string },
+      string,
+      Name
+    >;
+  };
   delivery: {
     createDeliveryLog: FunctionReference<
       "mutation",
@@ -64,8 +117,8 @@ export type ComponentApi<
     markAllRead: FunctionReference<
       "mutation",
       "internal",
-      { userId: string },
-      null,
+      { batchSize?: number; userId: string },
+      { hasMore: boolean; marked: number },
       Name
     >;
     markRead: FunctionReference<
@@ -95,9 +148,11 @@ export type ComponentApi<
       "mutation",
       "internal",
       {
+        actionUrl?: string;
         body: string;
         data?: any;
         event: string;
+        imageUrl?: string;
         title: string;
         transactional?: boolean;
         userId: string;
@@ -147,4 +202,5 @@ export type ComponentApi<
       Name
     >;
   };
+  rateLimiter: RateLimiterApi<Name>;
 };
