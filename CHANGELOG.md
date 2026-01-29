@@ -24,16 +24,17 @@
 ### Foundation Release
 
 - Component schema: notifications, preferences, deduplication, deliveryLog tables
-- `createNotificationsApi()` factory with auth injection and address resolvers
-- `createNotification<T>()` event factory with per-channel templates
-- Multi-channel delivery: push (Expo), email (Resend), SMS (Twilio)
+- `Notifications` class with constructor-based auth injection
+- `NotificationDefinition<T>` typed event definitions with per-channel templates
+- `api()` method for zero-boilerplate query/mutation exports
+- `html?` field on `EmailTemplate<T>` for React Email support
 - Inbox: paginated list, unreadCount, markRead, markAllRead, archive
 - 3-level user preference hierarchy (global > category > event)
 - Transactional notification flag (bypasses preferences)
-- Idempotency via deduplication keys
-- Push token registration passthrough
-- React hooks for inbox and preferences
-- Example app with integration tests
+- Idempotency via deduplication keys with configurable TTL
+- Delivery log stubs for email, push, SMS channels
+- 35 integration tests with convex-test
+- CI pipeline with release gated on test/lint/typecheck
 
 ## 0.0.0
 
