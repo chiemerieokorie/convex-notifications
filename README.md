@@ -10,7 +10,7 @@ A full-stack notifications engine for Convex apps. Real-time inbox, multi-channe
 
 - Real-time inbox with `list`, `unreadCount`, `markRead`, `markAllRead`, `archive`
 - Multi-channel delivery: push (Expo), email (Resend), SMS (Twilio)
-- `createNotification<T>()` factory — define an event in one file (~20 lines)
+- `NotificationDefinition<T>` type — define an event in one file (~20 lines)
 - 3-level user preferences: global > category > event
 - Transactional notifications that bypass preferences
 - Idempotency via deduplication keys
@@ -92,14 +92,17 @@ npx convex deploy
 
 ## Defining Notification Events
 
-Use `createNotification<T>()` to define each event type in a single file. Templates receive **only `data`** — the engine resolves user addresses automatically via your configured resolvers.
+Define each event type as a `NotificationDefinition`. Templates receive **only `data`** — the engine resolves user addresses automatically via your configured resolvers.
 
 ```ts
 // convex/notifications/commentReply.ts
-import { createNotification } from "convex-notifications";
+import type { NotificationDefinition } from "convex-notifications";
 import { v } from "convex/values";
 
-export const commentReplyNotification = createNotification({
+export const commentReplyNotification: NotificationDefinition<{
+  commenterName: string;
+  postTitle: string;
+}> = {
   event: "comment.reply",
   dataValidator: v.object({
     commenterName: v.string(),
@@ -120,7 +123,7 @@ export const commentReplyNotification = createNotification({
       body: (data) => `${data.commenterName} replied on "${data.postTitle}"`,
     },
   },
-});
+};
 ```
 
 ## Sending Notifications
@@ -258,7 +261,9 @@ function NotificationBell() {
 Use `emailComponent` to render rich emails with React Email:
 
 ```ts
-export const welcomeNotification = createNotification({
+import type { NotificationDefinition } from "convex-notifications";
+
+export const welcomeNotification: NotificationDefinition<{ userName: string }> = {
   event: "user.welcome",
   dataValidator: v.object({ userName: v.string() }),
   channels: {
@@ -271,7 +276,7 @@ export const welcomeNotification = createNotification({
       body: () => `Thanks for joining.`,
     },
   },
-});
+};
 ```
 
 ## API Reference

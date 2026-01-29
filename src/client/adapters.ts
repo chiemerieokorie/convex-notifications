@@ -3,10 +3,9 @@ import type { ChannelAdapter, RenderedMessage } from "./types.js";
 export type { ChannelAdapter, RenderedMessage } from "./types.js";
 
 /**
- * Stub email adapter for Resend.
+ * Email adapter for Resend.
  *
- * Replace the `dispatch` method with actual Resend API calls
- * when running in an action context.
+ * Dispatches emails via the Resend API. Must be called from an action context.
  */
 export class ResendAdapter implements ChannelAdapter {
   channel = "email";
@@ -57,10 +56,9 @@ export class ResendAdapter implements ChannelAdapter {
 }
 
 /**
- * Stub push adapter for Expo.
+ * Push notification adapter for Expo.
  *
- * Replace the `dispatch` method with actual Expo push API calls
- * when running in an action context.
+ * Dispatches push notifications via the Expo Push API. Must be called from an action context.
  */
 export class ExpoAdapter implements ChannelAdapter {
   channel = "push";
@@ -108,10 +106,9 @@ export class ExpoAdapter implements ChannelAdapter {
 }
 
 /**
- * Stub SMS adapter for Twilio.
+ * SMS adapter for Twilio.
  *
- * Replace the `dispatch` method with actual Twilio API calls
- * when running in an action context.
+ * Dispatches SMS messages via the Twilio API. Must be called from an action context.
  */
 export class TwilioAdapter implements ChannelAdapter {
   channel = "sms";
