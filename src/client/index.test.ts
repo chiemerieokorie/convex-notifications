@@ -22,10 +22,13 @@ const testEventDef: NotificationDefinition<{ message: string }> = {
     inbox: {
       title: () => "Test Notification",
       body: (data) => data.message,
+      actionUrl: () => "/inbox",
+      imageUrl: () => "/avatar.png",
     },
     email: {
       subject: () => "Test Email",
       body: (data) => data.message,
+      html: (data) => `<p>${data.message}</p>`,
     },
   },
 };
@@ -82,6 +85,7 @@ export const send = mutation({
     transactional: v.optional(v.boolean()),
     deduplicationKey: v.optional(v.string()),
     deduplicationTtlSeconds: v.optional(v.number()),
+    cancellationKey: v.optional(v.string()),
   },
   handler: (ctx, args) =>
     notifications.send(ctx, testEventDef, {
@@ -90,7 +94,13 @@ export const send = mutation({
       transactional: args.transactional,
       deduplicationKey: args.deduplicationKey,
       deduplicationTtlSeconds: args.deduplicationTtlSeconds,
+      cancellationKey: args.cancellationKey,
     }),
+});
+
+export const cancel = mutation({
+  args: { key: v.string() },
+  handler: (ctx, args) => notifications.cancel(ctx, { key: args.key }),
 });
 
 const testApi = (
@@ -104,6 +114,7 @@ const testApi = (
       getPreferences: typeof getPreferences;
       updatePreference: typeof updatePreference;
       send: typeof send;
+      cancel: typeof cancel;
     };
   }>
 )["index.test"];
@@ -235,5 +246,42 @@ describe("client integration", () => {
     // Notification was still created in inbox
     const result = await t.query(testApi.list, {});
     expect(result.notifications).toHaveLength(1);
+  });
+
+  test("notification includes actionUrl and imageUrl", async () => {
+    const t = initConvexTest().withIdentity({ subject: "user1" });
+
+    await t.mutation(testApi.send, {
+      userId: "user1",
+      data: { message: "With links" },
+    });
+
+    const result = await t.query(testApi.list, {});
+    expect(result.notifications[0].actionUrl).toBe("/inbox");
+    expect(result.notifications[0].imageUrl).toBe("/avatar.png");
+  });
+
+  test("cancellation key cancels notification", async () => {
+    const t = initConvexTest().withIdentity({ subject: "user1" });
+
+    await t.mutation(testApi.send, {
+      userId: "user1",
+      data: { message: "Cancelable" },
+      cancellationKey: "cancel-test",
+    });
+
+    // Verify notification exists
+    let result = await t.query(testApi.list, {});
+    expect(result.notifications).toHaveLength(1);
+
+    // Cancel it
+    const cancelled = await t.mutation(testApi.cancel, {
+      key: "cancel-test",
+    });
+    expect(cancelled).toBe(true);
+
+    // Verify it's gone from list (archived)
+    result = await t.query(testApi.list, {});
+    expect(result.notifications).toHaveLength(0);
   });
 });

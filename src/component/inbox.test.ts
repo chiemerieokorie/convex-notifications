@@ -66,7 +66,7 @@ describe("inbox", () => {
     );
   });
 
-  test("markAllRead marks all unread", async () => {
+  test("markAllRead marks all unread and returns count", async () => {
     const t = initConvexTest();
     await t.mutation(internal.notifications.createNotification, {
       userId: "user1",
@@ -81,11 +81,41 @@ describe("inbox", () => {
       body: "2",
     });
 
-    await t.mutation(internal.inbox.markAllRead, { userId: "user1" });
+    const result = await t.mutation(internal.inbox.markAllRead, {
+      userId: "user1",
+    });
+    expect(result.marked).toBe(2);
+    expect(result.hasMore).toBe(false);
 
-    expect(await t.query(internal.inbox.unreadCount, { userId: "user1" })).toBe(
-      0,
-    );
+    expect(
+      await t.query(internal.inbox.unreadCount, { userId: "user1" }),
+    ).toBe(0);
+  });
+
+  test("markAllRead batches with batchSize", async () => {
+    const t = initConvexTest();
+    for (let i = 0; i < 5; i++) {
+      await t.mutation(internal.notifications.createNotification, {
+        userId: "user1",
+        event: "test",
+        title: `${i}`,
+        body: `${i}`,
+      });
+    }
+
+    const result = await t.mutation(internal.inbox.markAllRead, {
+      userId: "user1",
+      batchSize: 3,
+    });
+    expect(result.marked).toBe(3);
+    expect(result.hasMore).toBe(true);
+
+    const result2 = await t.mutation(internal.inbox.markAllRead, {
+      userId: "user1",
+      batchSize: 3,
+    });
+    expect(result2.marked).toBe(2);
+    expect(result2.hasMore).toBe(false);
   });
 
   test("archive excludes from list", async () => {

@@ -10,11 +10,12 @@ This is a **Convex component** (not a standalone app). It is installed into cons
 
 | Component | Purpose |
 |---|---|
-| expo-push-notifications | Mobile push delivery |
-| resend | Email delivery |
-| twilio | SMS delivery |
-| workflow | Retry and multi-step delivery flows |
-| crons | Scheduled and recurring notifications |
+| @convex-dev/rate-limiter | Per-event per-user rate limiting |
+| expo-push-notifications | Mobile push delivery (planned) |
+| resend | Email delivery (planned) |
+| twilio | SMS delivery (planned) |
+| workflow | Retry and multi-step delivery flows (planned) |
+| crons | Scheduled and recurring notifications (planned) |
 
 ## Development Commands
 
@@ -61,19 +62,25 @@ Component Internals
 ### Dispatch Flow
 
 1. Consumer calls `send(ctx, { data })` from a `createNotification()` event
-2. Engine creates inbox record (always)
-3. Engine checks if notification is transactional — if yes, skip preference check
-4. Engine resolves user preferences (3-level: global > category > event)
-5. For each enabled channel: render template with `data`, resolve address via config resolvers, dispatch to child component
+2. Check deduplication key (if provided)
+3. Check rate limit via `@convex-dev/rate-limiter` (if configured on definition)
+4. If batch config: accumulate to `pendingBatches` table, return null
+5. Check quiet hours via settings resolver (non-transactional only)
+6. Create inbox record with `actionUrl`, `imageUrl` (always)
+7. Record dedup key and cancellation key (if provided)
+8. Resolve user preferences (3-level: global > category > event)
+9. For each enabled channel: render template (including `html`), create delivery log, dispatch (stub)
 
 ### Key Tables (src/component/schema.ts)
 
 | Table | Purpose |
 |---|---|
-| notifications | Inbox records (userId, event, title, body, read, archived) |
+| notifications | Inbox records (userId, event, title, body, actionUrl, imageUrl, read, archived) |
 | preferences | Per-user channel preferences (global, category, event levels) |
 | deduplication | Idempotency keys with TTL |
 | deliveryLog | Per-channel delivery status tracking |
+| pendingBatches | Batch-on-write notification accumulation with flush windows |
+| cancellationKeys | Maps cancellation keys to notification IDs |
 
 ## Key Patterns
 

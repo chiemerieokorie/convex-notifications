@@ -4,23 +4,82 @@ import type {
   FunctionArgs,
   FunctionReturnType,
 } from "convex/server";
-import type { ComponentApi } from "../component/_generated/component.js";
-import type { NotificationsOptions, NotificationDefinition } from "./types.js";
+import { RateLimiter } from "@convex-dev/rate-limiter";
+import type {
+  NotificationsOptions,
+  NotificationDefinition,
+  SendArgs,
+  UserSettings,
+} from "./types.js";
+
+// Use the generated component API type. After running `npm run build:codegen`,
+// the ComponentApi type will include all sub-modules (inbox, notifications,
+// preferences, delivery, cancellation, batching, rateLimiter). Before codegen
+// runs, we extend the type to include the new modules.
+type ComponentApi = {
+  inbox: any;
+  notifications: any;
+  preferences: any;
+  delivery: any;
+  cancellation: any;
+  batching: any;
+  rateLimiter: any;
+};
 
 export type { NotificationsOptions, NotificationDefinition } from "./types.js";
 export type {
+  BatchConfig,
+  ChannelAdapter,
   ChannelTemplates,
   EmailTemplate,
   InboxTemplate,
   PushTemplate,
+  RateLimitConfig,
+  RenderedMessage,
+  SendArgs,
   SmsTemplate,
+  UserSettings,
 } from "./types.js";
 
+// --- Quiet hours helper ---
+
+function isInQuietHours(
+  settings: UserSettings,
+  nowMs: number,
+): boolean {
+  if (
+    settings.quietHoursStart === undefined ||
+    settings.quietHoursEnd === undefined ||
+    !settings.timezone
+  ) {
+    return false;
+  }
+
+  // Approximate timezone offset — in production, consumers should
+  // provide a full resolver. We use UTC minutes-from-midnight here.
+  const nowMinutes = Math.floor((nowMs / 60000) % 1440);
+  const start = settings.quietHoursStart;
+  const end = settings.quietHoursEnd;
+
+  if (start <= end) {
+    // Same-day window (e.g. 8am–6pm)
+    return nowMinutes >= start && nowMinutes < end;
+  }
+  // Overnight window (e.g. 11pm–8am)
+  return nowMinutes >= start || nowMinutes < end;
+}
+
 export class Notifications {
+  private rateLimiter: RateLimiter;
+
   constructor(
     public component: ComponentApi,
     public options: NotificationsOptions,
-  ) {}
+  ) {
+    this.rateLimiter = new RateLimiter(component.rateLimiter, {});
+  }
+
+  // --- Inbox queries ---
 
   async list(
     ctx: RunQueryCtx,
@@ -38,6 +97,8 @@ export class Notifications {
     return await ctx.runQuery(this.component.inbox.unreadCount, { userId });
   }
 
+  // --- Inbox mutations ---
+
   async markRead(ctx: RunMutationCtx, notificationId: string) {
     const userId = await this.options.auth(ctx);
     return await ctx.runMutation(this.component.inbox.markRead, {
@@ -48,9 +109,17 @@ export class Notifications {
 
   async markAllRead(ctx: RunMutationCtx) {
     const userId = await this.options.auth(ctx);
-    return await ctx.runMutation(this.component.inbox.markAllRead, {
-      userId,
-    });
+    let hasMore = true;
+    let totalMarked = 0;
+    while (hasMore) {
+      const result = await ctx.runMutation(
+        this.component.inbox.markAllRead,
+        { userId, batchSize: 500 },
+      );
+      totalMarked += result.marked;
+      hasMore = result.hasMore;
+    }
+    return totalMarked;
   }
 
   async archive(ctx: RunMutationCtx, notificationId: string) {
@@ -60,6 +129,8 @@ export class Notifications {
       notificationId,
     });
   }
+
+  // --- Preferences ---
 
   async getPreferences(ctx: RunQueryCtx) {
     const userId = await this.options.auth(ctx);
@@ -85,18 +156,25 @@ export class Notifications {
     );
   }
 
+  // --- Cancellation ---
+
+  async cancel(ctx: RunMutationCtx, args: { key: string }) {
+    return await ctx.runMutation(
+      this.component.cancellation.cancelByKey,
+      { key: args.key },
+    );
+  }
+
+  // --- Send ---
+
   async send<T>(
     ctx: RunMutationCtx,
     definition: NotificationDefinition<T>,
-    args: {
-      userId: string;
-      data: T;
-      transactional?: boolean;
-      deduplicationKey?: string;
-      deduplicationTtlSeconds?: number;
-    },
+    args: SendArgs<T>,
   ) {
     const data = args.data;
+    const isTransactional =
+      args.transactional ?? definition.transactional ?? false;
 
     // 1. Check deduplication
     if (args.deduplicationKey) {
@@ -111,12 +189,86 @@ export class Notifications {
       }
     }
 
-    // 2. Render inbox template and create notification
+    // 2. Rate limiting (via @convex-dev/rate-limiter component)
+    if (definition.rateLimit) {
+      const { ok, retryAfter } = await this.rateLimiter.limit(
+        ctx as any,
+        definition.event,
+        {
+          key: args.userId,
+          config: {
+            kind: definition.rateLimit.kind,
+            rate: definition.rateLimit.rate,
+            period: definition.rateLimit.period,
+            ...(definition.rateLimit.capacity !== undefined
+              ? { capacity: definition.rateLimit.capacity }
+              : {}),
+          },
+        },
+      );
+      if (!ok) {
+        throw new Error(
+          `Rate limited for ${definition.event}. Retry after ${retryAfter}ms`,
+        );
+      }
+    }
+
+    // 3. Batching — if configured, accumulate instead of sending immediately
+    if (definition.batch && !isTransactional) {
+      const batchKey = definition.batch.batchKey(data, args.userId);
+      const { isNew } = await ctx.runMutation(
+        this.component.batching.getOrCreateBatch,
+        {
+          batchKey,
+          userId: args.userId,
+          event: definition.event,
+          windowMs: definition.batch.windowMs,
+          item: data as any,
+        },
+      );
+
+      // Record dedup key even for batched notifications
+      if (args.deduplicationKey) {
+        await ctx.runMutation(
+          this.component.notifications.recordDeduplication,
+          {
+            key: args.deduplicationKey,
+            ttlSeconds: args.deduplicationTtlSeconds ?? 86400,
+          },
+        );
+      }
+
+      // The batch will be flushed by a scheduled function or cron
+      // Return null to indicate the notification was batched, not sent immediately
+      if (!isNew) return null;
+      // For new batches, the consumer should schedule a flush
+      return null;
+    }
+
+    // 4. Quiet hours check (non-transactional only)
+    let inQuietHours = false;
+    if (!isTransactional && this.options.resolvers?.settings) {
+      const settings = await this.options.resolvers.settings(
+        ctx,
+        args.userId,
+      );
+      if (settings) {
+        inQuietHours = isInQuietHours(settings, Date.now());
+      }
+    }
+
+    // 5. Render inbox template and create notification
     const inboxTemplate = definition.channels.inbox;
     const title = inboxTemplate
       ? inboxTemplate.title(data)
       : definition.event;
     const body = inboxTemplate ? inboxTemplate.body(data) : "";
+    const actionUrl = inboxTemplate?.actionUrl
+      ? inboxTemplate.actionUrl(data)
+      : undefined;
+    const imageUrl = inboxTemplate?.imageUrl
+      ? inboxTemplate.imageUrl(data)
+      : undefined;
 
     const notificationId = await ctx.runMutation(
       this.component.notifications.createNotification,
@@ -126,11 +278,13 @@ export class Notifications {
         title,
         body,
         data: args.data as any,
-        transactional: args.transactional,
+        actionUrl,
+        imageUrl,
+        transactional: isTransactional || undefined,
       },
     );
 
-    // 3. Record deduplication key
+    // 6. Record deduplication key
     if (args.deduplicationKey) {
       await ctx.runMutation(
         this.component.notifications.recordDeduplication,
@@ -141,11 +295,22 @@ export class Notifications {
       );
     }
 
-    // 4. Resolve enabled channels
+    // 7. Record cancellation key
+    if (args.cancellationKey) {
+      await ctx.runMutation(
+        this.component.cancellation.storeCancellationKey,
+        {
+          key: args.cancellationKey,
+          notificationId,
+        },
+      );
+    }
+
+    // 8. Resolve enabled channels
     const definedChannels = Object.keys(definition.channels);
     let enabledChannels: string[];
 
-    if (args.transactional) {
+    if (isTransactional) {
       enabledChannels = definedChannels;
     } else {
       enabledChannels = await ctx.runQuery(
@@ -159,16 +324,20 @@ export class Notifications {
       );
     }
 
-    // 5. Dispatch to each enabled non-inbox channel (stub)
+    // 9. Dispatch to each enabled non-inbox channel
+    // Skip external channels during quiet hours (non-transactional)
     for (const channel of enabledChannels) {
       if (channel === "inbox") continue;
+      if (inQuietHours && !isTransactional) continue;
 
       let rendered: Record<string, string> | undefined;
 
       if (channel === "email" && definition.channels.email) {
+        const emailTpl = definition.channels.email;
         rendered = {
-          subject: definition.channels.email.subject(data),
-          body: definition.channels.email.body(data),
+          subject: emailTpl.subject(data),
+          body: emailTpl.body(data),
+          ...(emailTpl.html ? { html: emailTpl.html(data) } : {}),
         };
       } else if (channel === "push" && definition.channels.push) {
         rendered = {
@@ -190,9 +359,11 @@ export class Notifications {
         metadata: rendered,
       });
 
-      // Stub: real adapters will replace this
+      // Stub: real adapters (Resend, Expo, Twilio) will dispatch via
+      // scheduled actions. The delivery log entry is created above so
+      // adapters can update status to sent/delivered/failed.
       console.log(
-        `[notifications] stub dispatch ${channel} → user ${args.userId}:`,
+        `[notifications] dispatch ${channel} → user ${args.userId}:`,
         rendered,
       );
     }

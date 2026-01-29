@@ -8,6 +8,8 @@ export const createNotification = internalMutation({
     title: v.string(),
     body: v.string(),
     data: v.optional(v.any()),
+    actionUrl: v.optional(v.string()),
+    imageUrl: v.optional(v.string()),
     transactional: v.optional(v.boolean()),
   },
   returns: v.id("notifications"),
@@ -18,6 +20,8 @@ export const createNotification = internalMutation({
       title: args.title,
       body: args.body,
       data: args.data,
+      actionUrl: args.actionUrl,
+      imageUrl: args.imageUrl,
       transactional: args.transactional,
     });
   },

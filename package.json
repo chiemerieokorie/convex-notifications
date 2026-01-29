@@ -51,6 +51,14 @@
       "types": "./dist/react/index.d.ts",
       "default": "./dist/react/index.js"
     },
+    "./webhooks": {
+      "types": "./dist/client/webhooks.d.ts",
+      "default": "./dist/client/webhooks.js"
+    },
+    "./adapters": {
+      "types": "./dist/client/adapters.d.ts",
+      "default": "./dist/client/adapters.js"
+    },
     "./test": "./src/test.ts",
     "./_generated/component.js": {
       "types": "./dist/component/_generated/component.d.ts"
@@ -105,5 +113,8 @@
     "vitest": "4.0.18"
   },
   "types": "./dist/client/index.d.ts",
-  "module": "./dist/client/index.js"
+  "module": "./dist/client/index.js",
+  "dependencies": {
+    "@convex-dev/rate-limiter": "^0.3.2"
+  }
 }

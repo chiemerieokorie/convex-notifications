@@ -13,23 +13,29 @@ export const list = internalQuery({
   }),
   handler: async (ctx, args) => {
     const limit = args.limit ?? 20;
-    const q = ctx.db
-      .query("notifications")
-      .withIndex("by_userId", (q) => q.eq("userId", args.userId));
 
-    const all = await q.order("desc").collect();
+    let q;
+    if (args.cursor !== undefined) {
+      q = ctx.db
+        .query("notifications")
+        .withIndex("by_userId_active", (idx) =>
+          idx
+            .eq("userId", args.userId)
+            .eq("archivedAt", undefined)
+            .lt("_creationTime", args.cursor!),
+        );
+    } else {
+      q = ctx.db
+        .query("notifications")
+        .withIndex("by_userId_active", (idx) =>
+          idx.eq("userId", args.userId).eq("archivedAt", undefined),
+        );
+    }
 
-    // Filter: exclude archived, apply cursor
-    const filtered = all.filter((n) => {
-      if (n.archivedAt !== undefined) return false;
-      if (args.cursor !== undefined && n._creationTime >= args.cursor)
-        return false;
-      return true;
-    });
-
-    const page = filtered.slice(0, limit);
+    const results = await q.order("desc").take(limit + 1);
+    const page = results.slice(0, limit);
     const nextCursor =
-      page.length === limit ? page[page.length - 1]._creationTime : null;
+      results.length > limit ? page[page.length - 1]._creationTime : null;
 
     return { notifications: page, cursor: nextCursor };
   },
@@ -41,11 +47,11 @@ export const unreadCount = internalQuery({
   handler: async (ctx, args) => {
     const results = await ctx.db
       .query("notifications")
-      .withIndex("by_userId_unread", (q) =>
-        q.eq("userId", args.userId).eq("readAt", undefined),
+      .withIndex("by_userId_active", (idx) =>
+        idx.eq("userId", args.userId).eq("archivedAt", undefined),
       )
       .collect();
-    return results.filter((n) => n.archivedAt === undefined).length;
+    return results.filter((n) => n.readAt === undefined).length;
   },
 });
 
@@ -66,20 +72,30 @@ export const markRead = internalMutation({
 });
 
 export const markAllRead = internalMutation({
-  args: { userId: v.string() },
-  returns: v.null(),
+  args: {
+    userId: v.string(),
+    batchSize: v.optional(v.number()),
+  },
+  returns: v.object({
+    marked: v.number(),
+    hasMore: v.boolean(),
+  }),
   handler: async (ctx, args) => {
+    const limit = args.batchSize ?? 500;
     const unread = await ctx.db
       .query("notifications")
       .withIndex("by_userId_unread", (q) =>
         q.eq("userId", args.userId).eq("readAt", undefined),
       )
-      .collect();
+      .take(limit + 1);
     const now = Date.now();
-    for (const n of unread) {
-      await ctx.db.patch(n._id, { readAt: now });
+    const batch = unread.slice(0, limit);
+    for (const n of batch) {
+      if (n.archivedAt === undefined) {
+        await ctx.db.patch(n._id, { readAt: now });
+      }
     }
-    return null;
+    return { marked: batch.length, hasMore: unread.length > limit };
   },
 });
 

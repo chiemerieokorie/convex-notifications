@@ -31,11 +31,14 @@ const commentReplyDef: NotificationDefinition<{
     inbox: {
       title: (data) => `${data.commenterName} replied`,
       body: (data) => `New reply on "${data.postTitle}"`,
+      actionUrl: (data) => `/posts/${encodeURIComponent(data.postTitle)}`,
     },
     email: {
       subject: (data) => `${data.commenterName} replied to your comment`,
       body: (data) =>
         `${data.commenterName} replied on "${data.postTitle}".`,
+      html: (data) =>
+        `<p><strong>${data.commenterName}</strong> replied on "${data.postTitle}".</p>`,
     },
     push: {
       title: (_data) => "New reply",
@@ -53,10 +56,14 @@ const welcomeDef: NotificationDefinition<{ userName: string }> = {
     inbox: {
       title: (data) => `Welcome, ${data.userName}!`,
       body: () => "Thanks for joining. Here's how to get started.",
+      actionUrl: () => "/getting-started",
+      imageUrl: () => "/welcome-icon.png",
     },
     email: {
       subject: (data) => `Welcome to the app, ${data.userName}`,
       body: (data) => `Hi ${data.userName}, welcome aboard!`,
+      html: (data) =>
+        `<h1>Welcome, ${data.userName}!</h1><p>Thanks for joining.</p>`,
     },
   },
 };
@@ -110,6 +117,13 @@ export const updatePreference = mutation({
   handler: (ctx, args) => notifications.updatePreference(ctx, args),
 });
 
+// --- Cancellation ---
+
+export const cancelNotification = mutation({
+  args: { key: v.string() },
+  handler: (ctx, args) => notifications.cancel(ctx, { key: args.key }),
+});
+
 // --- Send mutations ---
 
 export const sendTestNotification = mutation({
@@ -130,12 +144,14 @@ export const sendCommentReply = mutation({
       commenterName: v.string(),
       postTitle: v.string(),
     }),
+    cancellationKey: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userId = args.userId ?? (await getAuthUserId(ctx));
     return notifications.send(ctx, commentReplyDef, {
       userId,
       data: args.data,
+      cancellationKey: args.cancellationKey,
     });
   },
 });

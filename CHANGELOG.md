@@ -1,3 +1,27 @@
+## [1.2.0](https://github.com/chiemerieokorie/convex-notifications/compare/v1.1.0...v1.2.0) (2026-01-29)
+
+### Features
+
+* **schema**: add `actionUrl` and `imageUrl` fields to notifications table for deep linking
+* **schema**: add `by_userId_active` index for efficient pagination (replaces `.collect()` + `.filter()`)
+* **schema**: add `pendingBatches` table for batch-on-write notification collapsing
+* **schema**: add `cancellationKeys` table for pending notification cancellation
+* **types**: add `html?` to `EmailTemplate` for React Email rendering
+* **types**: add `actionUrl?` and `imageUrl?` to `InboxTemplate`
+* **types**: add `RateLimitConfig`, `BatchConfig<T>`, `ChannelAdapter`, `SendArgs<T>` types
+* **types**: add `UserSettings` resolver for timezone/quiet hours
+* **inbox**: fix `list()` to use index-based pagination with `.take()` instead of `.collect()`
+* **inbox**: add batched `markAllRead` with `batchSize` param to avoid mutation timeouts
+* **rate-limit**: integrate `@convex-dev/rate-limiter` as child component for per-event rate limiting
+* **batching**: add batch-on-write accumulation with configurable flush windows
+* **cancellation**: add `cancel()` method with `cancellationKey` support on `send()`
+* **quiet-hours**: skip external channel dispatch during user quiet hours (non-transactional)
+* **webhooks**: add `registerDeliveryWebhooks()` following convex-stripe pattern
+* **adapters**: add `ChannelAdapter` interface with Resend, Expo, Twilio stub adapters
+* **react**: upgrade `useNotifications()` to accept full API object with mutations
+* **react**: upgrade `usePreferences()` to accept API object with updatePreference mutation
+* **tests**: add cancellation, batching test suites; update inbox and client tests
+
 ## [1.1.0](https://github.com/chiemerieokorie/convex-notifications/compare/v1.0.0...v1.1.0) (2026-01-29)
 
 ### Features

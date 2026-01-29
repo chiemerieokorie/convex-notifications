@@ -103,3 +103,51 @@ This moved React Email support from v0.3.0 to v0.1.0.
 **Why**: Users want global "mute email" but also per-event overrides. Categories group related events (e.g., "social", "onboarding") for batch preference management.
 
 This was originally planned for v0.2.0 but implemented in v0.1.0 since the schema already supported it.
+
+## 9. Rate limiting via `@convex-dev/rate-limiter` child component
+
+**Decision**: Use the `@convex-dev/rate-limiter` Convex component instead of implementing our own token bucket in the component schema.
+
+**Why**: The rate-limiter component is actively maintained, supports sharding for high throughput, and follows the same child-component pattern we already use for planned workflow/crons integration. It owns its own tables in its own sandbox — no schema changes needed in our component.
+
+**References**:
+- [@convex-dev/rate-limiter](https://www.convex.dev/components/rate-limiter) — official Convex component
+- [convex-helpers/server/rateLimit](https://github.com/get-convex/convex-helpers/blob/main/packages/convex-helpers/server/rateLimit.ts) — legacy helper (considered, not chosen)
+
+## 10. Webhook registration follows `convex-stripe` pattern
+
+**Decision**: Expose a standalone `registerDeliveryWebhooks(http, component, options)` function that consumers call from their `http.ts`, rather than a class method.
+
+**Why**: The component can't expose HTTP routes — the consumer must. The `convex-stripe` `registerRoutes()` pattern is the ecosystem standard. It takes an `HttpRouter`, the component API reference, and per-event handler callbacks.
+
+**References**:
+- [convex-stripe registerRoutes](https://github.com/get-convex/convex-stripe) — same pattern
+- [convex-twilio registerRoutes](https://github.com/get-convex/convex-twilio) — class method variant (less explicit)
+
+## 11. User settings via consumer resolver, not component table
+
+**Decision**: Quiet hours and timezone are resolved via a `settings` resolver function in `NotificationsOptions.resolvers`, not stored in a component-owned table.
+
+**Why**: User settings (timezone, quiet hours) are inherently consumer data — they belong alongside user profiles, not inside the notification component. The resolver pattern is already used for email/phone/pushToken. Adding a `userSettings` table to the component would duplicate data the consumer already has.
+
+## 12. Batch-on-write for notification collapsing
+
+**Decision**: Use a `pendingBatches` table with scheduled flush rather than workflow journal state or cron-based scanning.
+
+**Why**: Workflow journal has an 8 MiB limit — accumulating thousands of events would hit it. Cron-based batch-on-read requires scanning all unflushed batches every interval, which doesn't scale. Batch-on-write appends to a DB record and schedules a single flush action at window close.
+
+**References**:
+- [Knock batch-on-write](https://knock.app/blog/building-a-batched-notification-engine) — same approach
+- [NotificationAPI batching](https://www.notificationapi.com/blog/announcing-batching-and-digest) — similar pattern
+
+## 13. Index-based pagination (not `.collect()` + `.filter()`)
+
+**Decision**: Replace `list()` implementation from `.collect()` + `.filter()` to `.withIndex("by_userId_active").take(limit + 1)`.
+
+**Why**: The original implementation loaded ALL notifications into memory, then filtered and sliced. This is O(n) in total notifications, not O(page size). With the `by_userId_active` index on `[userId, archivedAt, _creationTime]`, we can query directly for non-archived notifications with cursor-based pagination.
+
+## 14. Batched `markAllRead` with continuation
+
+**Decision**: `markAllRead` now takes an optional `batchSize` (default 500) and returns `{ marked, hasMore }`. The client loops until `hasMore` is false.
+
+**Why**: The original implementation collected all unread notifications and patched them in a single mutation. With the 10-second Convex mutation limit, a user with thousands of unread notifications would hit timeouts. The batched approach processes 500 at a time.

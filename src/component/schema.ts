@@ -8,12 +8,15 @@ export default defineSchema({
     title: v.string(),
     body: v.string(),
     data: v.optional(v.any()),
+    actionUrl: v.optional(v.string()),
+    imageUrl: v.optional(v.string()),
     readAt: v.optional(v.number()),
     archivedAt: v.optional(v.number()),
     transactional: v.optional(v.boolean()),
   })
     .index("by_userId", ["userId", "_creationTime"])
-    .index("by_userId_unread", ["userId", "readAt"]),
+    .index("by_userId_unread", ["userId", "readAt"])
+    .index("by_userId_active", ["userId", "archivedAt", "_creationTime"]),
 
   preferences: defineTable({
     userId: v.string(),
@@ -51,4 +54,20 @@ export default defineSchema({
   })
     .index("by_notificationId", ["notificationId"])
     .index("by_status", ["status"]),
+
+  pendingBatches: defineTable({
+    batchKey: v.string(),
+    userId: v.string(),
+    event: v.string(),
+    items: v.array(v.any()),
+    windowEndsAt: v.number(),
+    flushed: v.boolean(),
+  })
+    .index("by_batchKey", ["batchKey"])
+    .index("by_flushed_windowEndsAt", ["flushed", "windowEndsAt"]),
+
+  cancellationKeys: defineTable({
+    key: v.string(),
+    notificationId: v.id("notifications"),
+  }).index("by_key", ["key"]),
 });

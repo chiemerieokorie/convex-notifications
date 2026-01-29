@@ -2,7 +2,7 @@
 
 Semantic versioning roadmap for `convex-notifications`.
 
-## v0.1.0 - Foundation (current)
+## v1.1.0 - Foundation
 
 - [x] Component schema (notifications, preferences, deduplication, deliveryLog)
 - [x] `Notifications` class with auth injection (constructor pattern)
@@ -12,61 +12,63 @@ Semantic versioning roadmap for `convex-notifications`.
 - [x] Idempotency via `deduplicationKey`
 - [x] Inbox: `list` (paginated), `unreadCount`, `markRead`, `markAllRead`, `archive`
 - [x] 3-level preference resolution (global > category > event)
-- [x] `html?` field on email templates (React Email compatible)
 - [x] Example app with 35 integration tests
 - [x] CI: test/lint/typecheck with release gated on passing tests
-- [ ] Channel adapters: push (Expo), email (Resend), SMS (Twilio)
+
+## v1.2.0 - v1.0.0 Stable Architecture (current)
+
+- [x] `actionUrl` and `imageUrl` fields on notifications (deep linking)
+- [x] `html?` field on email templates (React Email compatible)
+- [x] `by_userId_active` index for proper pagination (replaces `.collect()` + `.filter()`)
+- [x] Batched `markAllRead` with continuation (avoids 10s mutation timeout)
+- [x] Rate limiting via `@convex-dev/rate-limiter` child component
+- [x] Batch-on-write notification collapsing (`pendingBatches` table)
+- [x] Cancellation keys for pending notifications
+- [x] Quiet hours / timezone support (via consumer-provided settings resolver)
+- [x] `registerDeliveryWebhooks()` for Resend + Twilio status callbacks (Stripe pattern)
+- [x] `ChannelAdapter` interface with ResendAdapter, ExpoAdapter, TwilioAdapter stubs
+- [x] Enhanced React hooks: `useNotifications(api)` with mutations + unreadCount
+- [x] Enhanced React hooks: `usePreferences(api)` with updatePreference mutation
+- [x] `SendArgs<T>` type with `cancellationKey` support
+- [x] `RateLimitConfig` and `BatchConfig<T>` on `NotificationDefinition`
+- [x] `UserSettings` resolver for timezone/quiet hours
+- [x] 45+ integration tests
+
+## v1.3.0 - Channel Adapters (Live Dispatch)
+
+- [ ] Mutation → scheduled action split for channel delivery
+- [ ] Expo push adapter (live dispatch via action)
+- [ ] Resend email adapter (live dispatch via action)
+- [ ] Twilio SMS adapter (live dispatch via action)
 - [ ] Push token registration passthrough
-- [ ] React hooks for inbox and preferences
+- [ ] Delivery status tracking end-to-end
 
-## v0.2.0 - Channel Adapters
+## v1.4.0 - Delivery Reliability
 
-- Expo push adapter (passthrough to expo-push-notifications component)
-- Resend email adapter with React Email rendering
-- Twilio SMS adapter
-- Push token registration and management
-- Delivery log status tracking per channel
+- [ ] Retry logic via workflow component
+- [ ] Channel fallback chains (push → email after N minutes)
+- [ ] Throttling configuration per NotificationDefinition
 
-## v0.3.0 - React Hooks + Client SDK
+## v1.5.0 - Scheduling
 
-- `useNotifications()` hook (list, unreadCount, realtime)
-- `usePreferences()` hook for settings UI
-- `useCategoryPreferences()` hook for grouped settings
-- Optimistic updates for markRead/archive
+- [ ] Delayed sends (schedule notification for future delivery)
+- [ ] Recurring notifications via crons component
+- [ ] Deduplication key cleanup cron
+- [ ] Batch flush cron (automatic pending batch processing)
 
-## v0.4.0 - Delivery Reliability
+## v1.6.0 - Digests
 
-- Webhook handlers for delivery status (Resend events, Twilio callbacks)
-- Retry logic via workflow component
-- Channel fallback (push > email after N minutes unread)
+- [ ] Digest mode (heterogeneous events → periodic summary)
+- [ ] Configurable digest windows (hourly, daily, weekly)
 
-## v0.5.0 - Scheduled + Recurring
+## v1.7.0 - Analytics + Admin
 
-- Delayed sends (schedule notification for future delivery)
-- Recurring notifications via crons component
-- Smart send timing based on user behavior
-- Deduplication key cleanup cron
-
-## v0.6.0 - Digests + Batching
-
-- Digest mode per event type (aggregate multiple events into one notification)
-- Configurable digest windows (hourly, daily, weekly)
-
-## v0.7.0 - Analytics + Admin
-
-- Send / delivered / read rate analytics
-- Admin dashboard hooks for monitoring
-
-## v1.0.0 - Stable Release
-
-- API stabilization and semver commitment
-- CLI init command (`npx convex-notifications init`)
-- Comprehensive documentation
-- Published to npm and Convex Components directory
+- [ ] Send / delivered / read rate tracking
+- [ ] Admin dashboard hooks for monitoring
 
 ## Future
 
 - Additional channels (Slack, Discord, webhooks)
 - Notification grouping and stacking in inbox
 - A/B testing for notification content
-- Timezone-aware scheduling
+- Visual workflow builder
