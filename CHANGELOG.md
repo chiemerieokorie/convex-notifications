@@ -1,3 +1,10 @@
+## [1.1.0](https://github.com/chiemerieokorie/convex-notifications/compare/v1.0.0...v1.1.0) (2026-01-29)
+
+### Features
+
+* implement v0.1.0 notifications engine core ([a251ee5](https://github.com/chiemerieokorie/convex-notifications/commit/a251ee5899329a4cf68c79e0e7d0b9fa0e7c3da0))
+* update example app with notifications inbox UI and events ([5a25cb0](https://github.com/chiemerieokorie/convex-notifications/commit/5a25cb02491eea137817162d49b0a5e6f3e54494))
+
 ## 1.0.0 (2026-01-29)
 
 ### Features
