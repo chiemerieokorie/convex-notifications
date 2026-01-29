@@ -1,155 +1,231 @@
-import {
-  actionGeneric,
-  httpActionGeneric,
-  mutationGeneric,
-  queryGeneric,
-} from "convex/server";
-import type {
-  Auth,
-  GenericActionCtx,
-  GenericDataModel,
-  HttpRouter,
-} from "convex/server";
+import { mutationGeneric, queryGeneric } from "convex/server";
 import { v } from "convex/values";
 import type { ComponentApi } from "../component/_generated/component.js";
+import type { NotificationsConfig, NotificationDefinition } from "./types.js";
 
-// See the example/convex/example.ts file for how to use this component.
+export type { NotificationsConfig, NotificationDefinition } from "./types.js";
+export type {
+  ChannelTemplates,
+  EmailTemplate,
+  InboxTemplate,
+  PushTemplate,
+  SmsTemplate,
+} from "./types.js";
 
-/**
- *
- * @param ctx
- * @param targetId
- */
-export function translate(
-  ctx: ActionCtx,
+export function createNotificationsApi(
   component: ComponentApi,
-  commentId: string,
+  config: NotificationsConfig,
 ) {
-  // By wrapping the function call, we can read from environment variables.
-  const baseUrl = getDefaultBaseUrlUsingEnv();
-  return ctx.runAction(component.lib.translate, { commentId, baseUrl });
-}
-
-/**
- * For re-exporting of an API accessible from React clients.
- * e.g. `export const { list, add, translate } =
- * exposeApi(components.notifications, {
- *   auth: async (ctx, operation) => { ... },
- * });`
- * See example/convex/example.ts.
- */
-export function exposeApi(
-  component: ComponentApi,
-  options: {
-    /**
-     * It's very important to authenticate any functions that users will export.
-     * This function should return the authorized user's ID.
-     */
-    auth: (
-      ctx: { auth: Auth },
-      operation:
-        | { type: "read"; targetId: string }
-        | { type: "create"; targetId: string }
-        | { type: "update"; commentId: string },
-    ) => Promise<string>;
-    baseUrl?: string;
-  },
-) {
-  const baseUrl = options.baseUrl ?? getDefaultBaseUrlUsingEnv();
   return {
     list: queryGeneric({
-      args: { targetId: v.string() },
+      args: {
+        limit: v.optional(v.number()),
+        cursor: v.optional(v.number()),
+      },
+      returns: v.object({
+        notifications: v.array(v.any()),
+        cursor: v.union(v.number(), v.null()),
+      }),
       handler: async (ctx, args) => {
-        await options.auth(ctx, { type: "read", targetId: args.targetId });
-        return await ctx.runQuery(component.lib.list, {
-          targetId: args.targetId,
+        const userId = await config.auth(ctx);
+        return await ctx.runQuery(component.inbox.list, {
+          userId,
+          ...args,
         });
       },
     }),
-    add: mutationGeneric({
-      args: { text: v.string(), targetId: v.string() },
+
+    unreadCount: queryGeneric({
+      args: {},
+      returns: v.number(),
+      handler: async (ctx) => {
+        const userId = await config.auth(ctx);
+        return await ctx.runQuery(component.inbox.unreadCount, { userId });
+      },
+    }),
+
+    markRead: mutationGeneric({
+      args: { notificationId: v.string() },
+      returns: v.null(),
       handler: async (ctx, args) => {
-        const userId = await options.auth(ctx, {
-          type: "create",
-          targetId: args.targetId,
-        });
-        return await ctx.runMutation(component.lib.add, {
-          text: args.text,
-          userId: userId,
-          targetId: args.targetId,
+        const userId = await config.auth(ctx);
+        return await ctx.runMutation(component.inbox.markRead, {
+          userId,
+          notificationId: args.notificationId,
         });
       },
     }),
-    translate: actionGeneric({
-      args: { commentId: v.string() },
+
+    markAllRead: mutationGeneric({
+      args: {},
+      returns: v.null(),
+      handler: async (ctx) => {
+        const userId = await config.auth(ctx);
+        return await ctx.runMutation(component.inbox.markAllRead, { userId });
+      },
+    }),
+
+    archive: mutationGeneric({
+      args: { notificationId: v.string() },
+      returns: v.null(),
       handler: async (ctx, args) => {
-        await options.auth(ctx, {
-          type: "update",
-          commentId: args.commentId,
+        const userId = await config.auth(ctx);
+        return await ctx.runMutation(component.inbox.archive, {
+          userId,
+          notificationId: args.notificationId,
         });
-        return await ctx.runAction(component.lib.translate, {
-          commentId: args.commentId,
-          baseUrl,
+      },
+    }),
+
+    getPreferences: queryGeneric({
+      args: {},
+      returns: v.array(v.any()),
+      handler: async (ctx) => {
+        const userId = await config.auth(ctx);
+        return await ctx.runQuery(component.preferences.getPreferences, {
+          userId,
+        });
+      },
+    }),
+
+    updatePreference: mutationGeneric({
+      args: {
+        level: v.union(
+          v.literal("global"),
+          v.literal("category"),
+          v.literal("event"),
+        ),
+        key: v.optional(v.string()),
+        channel: v.string(),
+        enabled: v.boolean(),
+      },
+      returns: v.string(),
+      handler: async (ctx, args) => {
+        const userId = await config.auth(ctx);
+        return await ctx.runMutation(component.preferences.updatePreference, {
+          userId,
+          ...args,
         });
       },
     }),
   };
 }
 
-/**
- * Register HTTP routes for the component.
- * This allows you to expose HTTP endpoints for the component.
- * See example/convex/http.ts for an example.
- */
-export function registerRoutes(
-  http: HttpRouter,
+export function createNotification<T>(
   component: ComponentApi,
-  { pathPrefix = "/comments" }: { pathPrefix?: string } = {},
+  definition: NotificationDefinition<T>,
 ) {
-  http.route({
-    path: `${pathPrefix}/last`,
-    method: "GET",
-    // Note we use httpActionGeneric here because it will be registered in
-    // the app's http.ts file, which has a different type than our `httpAction`.
-    handler: httpActionGeneric(async (ctx, request) => {
-      const targetId = new URL(request.url).searchParams.get("targetId");
-      if (!targetId) {
-        return new Response(
-          JSON.stringify({ error: "targetId parameter required" }),
+  return {
+    send: mutationGeneric({
+      args: {
+        userId: v.string(),
+        data: v.any(),
+        transactional: v.optional(v.boolean()),
+        deduplicationKey: v.optional(v.string()),
+        deduplicationTtlSeconds: v.optional(v.number()),
+      },
+      returns: v.string(),
+      handler: async (ctx, args) => {
+        const data = args.data as T;
+
+        // 1. Check deduplication
+        if (args.deduplicationKey) {
+          const isDuplicate = await ctx.runQuery(
+            component.notifications.checkDeduplication,
+            { key: args.deduplicationKey },
+          );
+          if (isDuplicate) {
+            throw new Error(
+              "Duplicate notification suppressed by deduplication key",
+            );
+          }
+        }
+
+        // 2. Render inbox template and create notification
+        const inboxTemplate = definition.channels.inbox;
+        const title = inboxTemplate
+          ? inboxTemplate.title(data)
+          : definition.event;
+        const body = inboxTemplate ? inboxTemplate.body(data) : "";
+
+        const notificationId = await ctx.runMutation(
+          component.notifications.createNotification,
           {
-            status: 400,
-            headers: {
-              "Content-Type": "application/json",
-            },
+            userId: args.userId,
+            event: definition.event,
+            title,
+            body,
+            data: args.data,
+            transactional: args.transactional,
           },
         );
-      }
-      const comments = await ctx.runQuery(component.lib.list, {
-        targetId,
-      });
-      const lastComment = comments[0] ?? null;
-      return new Response(JSON.stringify(lastComment), {
-        status: 200,
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
+
+        // 3. Record deduplication key
+        if (args.deduplicationKey) {
+          await ctx.runMutation(component.notifications.recordDeduplication, {
+            key: args.deduplicationKey,
+            ttlSeconds: args.deduplicationTtlSeconds ?? 86400,
+          });
+        }
+
+        // 4. Resolve enabled channels
+        const definedChannels = Object.keys(definition.channels);
+        let enabledChannels: string[];
+
+        if (args.transactional) {
+          enabledChannels = definedChannels;
+        } else {
+          enabledChannels = await ctx.runQuery(
+            component.preferences.resolvePreferences,
+            {
+              userId: args.userId,
+              event: definition.event,
+              category: definition.category,
+              channels: definedChannels,
+            },
+          );
+        }
+
+        // 5. Dispatch to each enabled non-inbox channel (stub)
+        for (const channel of enabledChannels) {
+          if (channel === "inbox") continue;
+
+          let rendered: Record<string, string> | undefined;
+
+          if (channel === "email" && definition.channels.email) {
+            rendered = {
+              subject: definition.channels.email.subject(data),
+              body: definition.channels.email.body(data),
+            };
+          } else if (channel === "push" && definition.channels.push) {
+            rendered = {
+              title: definition.channels.push.title(data),
+              body: definition.channels.push.body(data),
+            };
+          } else if (channel === "sms" && definition.channels.sms) {
+            rendered = {
+              body: definition.channels.sms.body(data),
+            };
+          }
+
+          if (!rendered) continue;
+
+          await ctx.runMutation(component.delivery.createDeliveryLog, {
+            notificationId,
+            channel,
+            status: "pending" as const,
+            metadata: rendered,
+          });
+
+          // Stub: real adapters will replace this
+          console.log(
+            `[notifications] stub dispatch ${channel} → user ${args.userId}:`,
+            rendered,
+          );
+        }
+
+        return notificationId;
+      },
     }),
-  });
+  };
 }
-
-function getDefaultBaseUrlUsingEnv() {
-  return process.env.BASE_URL ?? "https://pirate.monkeyness.com";
-}
-
-// Convenient types for `ctx` args, that only include the bare minimum.
-
-// type QueryCtx = Pick<GenericQueryCtx<GenericDataModel>, "runQuery">;
-// type MutationCtx = Pick<
-//   GenericMutationCtx<GenericDataModel>,
-//   "runQuery" | "runMutation"
-// >;
-type ActionCtx = Pick<
-  GenericActionCtx<GenericDataModel>,
-  "runQuery" | "runMutation" | "runAction"
->;
