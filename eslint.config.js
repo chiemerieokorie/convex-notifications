@@ -13,6 +13,7 @@ export default [
       "example/**/*.config.{js,mjs,cjs,ts,tsx}",
       "**/_generated/",
       "initTemplate.mjs",
+      ".examples/**",
     ],
   },
   {
