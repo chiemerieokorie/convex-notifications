@@ -1,58 +1,79 @@
-import { action, mutation, query } from "./_generated/server.js";
 import { components } from "./_generated/api.js";
-import { exposeApi } from "convex-notifications";
+import {
+  createNotificationsApi,
+  createNotification,
+} from "convex-notifications";
 import { v } from "convex/values";
 import { Auth } from "convex/server";
 
-// Environment variables aren't available in the component,
-// so we need to pass it in as an argument to the component when necessary.
-const BASE_URL = process.env.BASE_URL ?? "https://pirate.monkeyness.com";
-
-export const addComment = mutation({
-  args: { text: v.string(), targetId: v.string() },
-  handler: async (ctx, args) => {
-    return await ctx.runMutation(components.notifications.lib.add, {
-      text: args.text,
-      targetId: args.targetId,
-      userId: await getAuthUserId(ctx),
-    });
-  },
-});
-
-export const listComments = query({
-  args: { targetId: v.string() },
-  handler: async (ctx, args) => {
-    return await ctx.runQuery(components.notifications.lib.list, {
-      targetId: args.targetId,
-    });
-  },
-});
-
-export const translateComment = action({
-  args: { commentId: v.string() },
-  handler: async (ctx, args) => {
-    return await ctx.runAction(components.notifications.lib.translate, {
-      baseUrl: BASE_URL,
-      commentId: args.commentId,
-    });
-  },
-});
-
-// Here is an alternative way to use the component's methods directly by re-exporting
-// the component's API:
-export const { list, add, translate } = exposeApi(components.notifications, {
-  auth: async (ctx, operation) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null && operation.type !== "read") {
-      throw new Error("Unauthorized");
-    }
-    return userId;
-  },
-  baseUrl: BASE_URL,
-});
-
-// You can also register HTTP routes for the component. See http.ts for an example.
+// --- API Setup ---
 
 async function getAuthUserId(ctx: { auth: Auth }) {
   return (await ctx.auth.getUserIdentity())?.subject ?? "anonymous";
 }
+
+export const {
+  list,
+  unreadCount,
+  markRead,
+  markAllRead,
+  archive,
+  getPreferences,
+  updatePreference,
+} = createNotificationsApi(components.notifications, {
+  auth: getAuthUserId,
+});
+
+// --- Notification Events ---
+
+export const commentReplyNotification = createNotification(
+  components.notifications,
+  {
+    event: "comment.reply",
+    dataValidator: v.object({
+      commenterName: v.string(),
+      postTitle: v.string(),
+    }),
+    category: "social",
+    channels: {
+      inbox: {
+        title: (data) => `${data.commenterName} replied`,
+        body: (data) => `New reply on "${data.postTitle}"`,
+      },
+      email: {
+        subject: (data) => `${data.commenterName} replied to your comment`,
+        body: (data) =>
+          `${data.commenterName} replied on "${data.postTitle}".`,
+      },
+      push: {
+        title: (_data) => "New reply",
+        body: (data) =>
+          `${data.commenterName} replied on "${data.postTitle}"`,
+      },
+    },
+  },
+);
+
+export const welcomeNotification = createNotification(
+  components.notifications,
+  {
+    event: "user.welcome",
+    dataValidator: v.object({ userName: v.string() }),
+    category: "onboarding",
+    channels: {
+      inbox: {
+        title: (data) => `Welcome, ${data.userName}!`,
+        body: () => "Thanks for joining. Here's how to get started.",
+      },
+      email: {
+        subject: (data) => `Welcome to the app, ${data.userName}`,
+        body: (data) => `Hi ${data.userName}, welcome aboard!`,
+      },
+    },
+  },
+);
+
+// --- Re-export send mutations for the example app ---
+
+export const sendTestNotification = welcomeNotification.send;
+export const sendCommentReply = commentReplyNotification.send;

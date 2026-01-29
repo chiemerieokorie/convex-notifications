@@ -2,25 +2,32 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { initConvexTest } from "./setup.test";
 import { api } from "./_generated/api";
 
-describe("example", () => {
-  beforeEach(async () => {
+describe("notifications example", () => {
+  beforeEach(() => {
     vi.useFakeTimers();
   });
-
-  afterEach(async () => {
+  afterEach(() => {
     vi.useRealTimers();
   });
 
-  test("addComment and listComments", async () => {
+  test("send welcome notification", async () => {
     const t = initConvexTest();
-    const targetId = "test-subject-1";
-    const commentId = await t.mutation(api.example.addComment, {
-      text: "My comment",
-      targetId,
+    const notificationId = await t.mutation(api.example.sendTestNotification, {
+      userId: "user1",
+      data: { userName: "Alice" },
     });
-    expect(commentId).toBeDefined();
-    const comments = await t.query(api.example.listComments, { targetId });
-    expect(comments).toHaveLength(1);
-    expect(comments[0].text).toBe("My comment");
+    expect(notificationId).toBeDefined();
+  });
+
+  test("send comment reply notification", async () => {
+    const t = initConvexTest();
+    const notificationId = await t.mutation(api.example.sendCommentReply, {
+      userId: "user1",
+      data: {
+        commenterName: "Alice",
+        postTitle: "Test Post",
+      },
+    });
+    expect(notificationId).toBeDefined();
   });
 });
