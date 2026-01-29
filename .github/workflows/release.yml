@@ -1,37 +1,39 @@
 name: Release
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
-  id-token: write
-  contents: write
-  issues: write
-  pull-requests: write
+  contents: read
 
 jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
     timeout-minutes: 30
-
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Node setup
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: lts/*
-
-      - run: npm clean-install
+          node-version: "lts/*"
+      - run: npm ci --legacy-peer-deps
       - run: npm audit signatures
-      - run: npm run build:clean
+      - run: npm run build
       - run: npm test
-
       - name: Release
-        run: npx semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx semantic-release
