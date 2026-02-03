@@ -255,16 +255,20 @@ function NotificationBell() {
 
 ## React Email Support
 
-Use `emailComponent` to render rich emails with React Email:
+Use the `html` field to render rich HTML emails. This works with React Email's `render()` function or any other HTML-producing tool:
 
 ```ts
+import { render } from "@react-email/components";
+import WelcomeEmail from "./emails/WelcomeEmail";
+
 export const welcomeNotification = createNotification({
   event: "user.welcome",
   dataValidator: v.object({ userName: v.string() }),
   channels: {
     email: {
       subject: (data) => `Welcome, ${data.userName}`,
-      emailComponent: (data) => <WelcomeEmail userName={data.userName} />,
+      body: (data) => `Welcome ${data.userName}! Thanks for joining.`, // Plain text fallback
+      html: (data) => render(<WelcomeEmail userName={data.userName} />),
     },
     inbox: {
       title: (data) => `Welcome, ${data.userName}!`,
@@ -272,6 +276,16 @@ export const welcomeNotification = createNotification({
     },
   },
 });
+```
+
+The `html` field supports both sync and async functions, so you can use `await render()` if needed:
+
+```ts
+email: {
+  subject: (data) => `Welcome, ${data.userName}`,
+  body: (data) => `Plain text version`,
+  html: async (data) => await render(<WelcomeEmail userName={data.userName} />),
+},
 ```
 
 ## API Reference

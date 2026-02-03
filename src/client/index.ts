@@ -166,9 +166,12 @@ export class Notifications {
       let rendered: Record<string, string> | undefined;
 
       if (channel === "email" && definition.channels.email) {
+        const emailTemplate = definition.channels.email;
+        const html = emailTemplate.html ? await emailTemplate.html(data) : undefined;
         rendered = {
-          subject: definition.channels.email.subject(data),
-          body: definition.channels.email.body(data),
+          subject: emailTemplate.subject(data),
+          body: emailTemplate.body(data),
+          ...(html && { html }),
         };
       } else if (channel === "push" && definition.channels.push) {
         rendered = {

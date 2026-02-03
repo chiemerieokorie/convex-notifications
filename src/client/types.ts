@@ -17,7 +17,13 @@ export type InboxTemplate<T> = {
 
 export type EmailTemplate<T> = {
   subject: (data: T) => string;
+  /** Plain text body for email clients that don't support HTML */
   body: (data: T) => string;
+  /**
+   * Optional HTML body for rich email content.
+   * Use with React Email: `html: (data) => render(<WelcomeEmail name={data.name} />)`
+   */
+  html?: (data: T) => string | Promise<string>;
 };
 
 export type PushTemplate<T> = {
