@@ -1,3 +1,12 @@
+## [Unreleased]
+
+### Features
+
+* **email**: implement `html` field on `EmailTemplate<T>` for React Email support
+  - Supports sync and async functions: `html: (data) => render(<Component />)`
+  - Works with any HTML-producing tool (React Email, MJML, etc.)
+  - Plain text `body` field serves as fallback for email clients without HTML support
+
 ## [1.1.0](https://github.com/chiemerieokorie/convex-notifications/compare/v1.0.0...v1.1.0) (2026-01-29)
 
 ### Features
