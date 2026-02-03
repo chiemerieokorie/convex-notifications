@@ -1,5 +1,5 @@
 import { components } from "./_generated/api.js";
-import { query, mutation } from "./_generated/server.js";
+import { mutation } from "./_generated/server.js";
 import { Notifications } from "convex-notifications";
 import type { NotificationDefinition } from "convex-notifications";
 import { v } from "convex/values";
@@ -61,54 +61,17 @@ const welcomeDef: NotificationDefinition<{ userName: string }> = {
   },
 };
 
-// --- Exported API ---
+// --- Exported API (using the new api() method for plug-and-play exports) ---
 
-export const list = query({
-  args: {
-    limit: v.optional(v.number()),
-    cursor: v.optional(v.number()),
-  },
-  handler: (ctx, args) => notifications.list(ctx, args),
-});
-
-export const unreadCount = query({
-  args: {},
-  handler: (ctx) => notifications.unreadCount(ctx),
-});
-
-export const markRead = mutation({
-  args: { notificationId: v.string() },
-  handler: (ctx, args) => notifications.markRead(ctx, args.notificationId),
-});
-
-export const markAllRead = mutation({
-  args: {},
-  handler: (ctx) => notifications.markAllRead(ctx),
-});
-
-export const archive = mutation({
-  args: { notificationId: v.string() },
-  handler: (ctx, args) => notifications.archive(ctx, args.notificationId),
-});
-
-export const getPreferences = query({
-  args: {},
-  handler: (ctx) => notifications.getPreferences(ctx),
-});
-
-export const updatePreference = mutation({
-  args: {
-    level: v.union(
-      v.literal("global"),
-      v.literal("category"),
-      v.literal("event"),
-    ),
-    key: v.optional(v.string()),
-    channel: v.string(),
-    enabled: v.boolean(),
-  },
-  handler: (ctx, args) => notifications.updatePreference(ctx, args),
-});
+export const {
+  list,
+  unreadCount,
+  markRead,
+  markAllRead,
+  archive,
+  getPreferences,
+  updatePreference,
+} = notifications.api();
 
 // --- Send mutations ---
 

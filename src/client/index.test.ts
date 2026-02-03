@@ -1,10 +1,10 @@
 import { describe, expect, test, vi, beforeEach, afterEach } from "vitest";
 import { anyApi, type ApiFromModules } from "convex/server";
+import { mutationGeneric } from "convex/server";
 import { components, initConvexTest } from "./setup.test.js";
 import { Notifications } from "./index.js";
 import type { NotificationDefinition } from "./types.js";
 import { v } from "convex/values";
-import { query, mutation } from "../component/_generated/server.js";
 
 // Instantiate class
 const notifications = new Notifications(components.notifications, {
@@ -30,52 +30,19 @@ const testEventDef: NotificationDefinition<{ message: string }> = {
   },
 };
 
-// Exported query/mutation wrappers (same pattern as example app)
-export const list = query({
-  args: { limit: v.optional(v.number()), cursor: v.optional(v.number()) },
-  handler: (ctx, args) => notifications.list(ctx, args),
-});
+// Use the new api() method for plug-and-play exports (no more 40+ lines of boilerplate!)
+export const {
+  list,
+  unreadCount,
+  markRead,
+  markAllRead,
+  archive,
+  getPreferences,
+  updatePreference,
+} = notifications.api();
 
-export const unreadCount = query({
-  args: {},
-  handler: (ctx) => notifications.unreadCount(ctx),
-});
-
-export const markRead = mutation({
-  args: { notificationId: v.string() },
-  handler: (ctx, args) => notifications.markRead(ctx, args.notificationId),
-});
-
-export const markAllRead = mutation({
-  args: {},
-  handler: (ctx) => notifications.markAllRead(ctx),
-});
-
-export const archive = mutation({
-  args: { notificationId: v.string() },
-  handler: (ctx, args) => notifications.archive(ctx, args.notificationId),
-});
-
-export const getPreferences = query({
-  args: {},
-  handler: (ctx) => notifications.getPreferences(ctx),
-});
-
-export const updatePreference = mutation({
-  args: {
-    level: v.union(
-      v.literal("global"),
-      v.literal("category"),
-      v.literal("event"),
-    ),
-    key: v.optional(v.string()),
-    channel: v.string(),
-    enabled: v.boolean(),
-  },
-  handler: (ctx, args) => notifications.updatePreference(ctx, args),
-});
-
-export const send = mutation({
+// The send mutation is still custom since it requires a notification definition
+export const send = mutationGeneric({
   args: {
     userId: v.string(),
     data: v.any(),
