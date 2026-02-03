@@ -6,6 +6,12 @@ import type {
 } from "convex/server";
 import type { ComponentApi } from "../component/_generated/component.js";
 import type { NotificationsOptions, NotificationDefinition } from "./types.js";
+import {
+  getDefaultDispatcher,
+  type RenderedEmail,
+  type RenderedPush,
+  type RenderedSms,
+} from "../component/channels/index.js";
 
 export type { NotificationsOptions, NotificationDefinition } from "./types.js";
 export type {
@@ -15,6 +21,17 @@ export type {
   PushTemplate,
   SmsTemplate,
 } from "./types.js";
+
+// Re-export channel adapter types for consumers who want to extend or use them
+export type {
+  ChannelName,
+  ChannelConfig,
+  DeliveryStatus,
+  DispatchResult,
+  RenderedEmail,
+  RenderedPush,
+  RenderedSms,
+} from "../component/channels/index.js";
 
 export class Notifications {
   constructor(
@@ -159,42 +176,64 @@ export class Notifications {
       );
     }
 
-    // 5. Dispatch to each enabled non-inbox channel (stub)
+    // 5. Dispatch to each enabled non-inbox channel
+    const dispatcher = getDefaultDispatcher();
+
     for (const channel of enabledChannels) {
       if (channel === "inbox") continue;
 
-      let rendered: Record<string, string> | undefined;
+      let rendered: RenderedEmail | RenderedPush | RenderedSms | undefined;
 
       if (channel === "email" && definition.channels.email) {
         rendered = {
           subject: definition.channels.email.subject(data),
           body: definition.channels.email.body(data),
-        };
+        } satisfies RenderedEmail;
       } else if (channel === "push" && definition.channels.push) {
         rendered = {
           title: definition.channels.push.title(data),
           body: definition.channels.push.body(data),
-        };
+        } satisfies RenderedPush;
       } else if (channel === "sms" && definition.channels.sms) {
         rendered = {
           body: definition.channels.sms.body(data),
-        };
+        } satisfies RenderedSms;
       }
 
       if (!rendered) continue;
 
-      await ctx.runMutation(this.component.delivery.createDeliveryLog, {
-        notificationId,
-        channel,
-        status: "pending" as const,
-        metadata: rendered,
-      });
-
-      // Stub: real adapters will replace this
-      console.log(
-        `[notifications] stub dispatch ${channel} → user ${args.userId}:`,
-        rendered,
+      // Create delivery log entry with pending status
+      const deliveryLogId = await ctx.runMutation(
+        this.component.delivery.createDeliveryLog,
+        {
+          notificationId,
+          channel,
+          status: "pending" as const,
+          metadata: rendered,
+        },
       );
+
+      // Dispatch via channel adapter (stub - real dispatch will use child components)
+      // TODO: When child components are integrated, this will call ctx.runAction
+      // to the appropriate component (resend, expo-push, twilio)
+      if (dispatcher.isSupported(channel)) {
+        // For now, resolvers are not called - addresses will come from consumer config
+        // This is a stub that logs the dispatch; real implementation will:
+        // 1. Resolve address via this.options.resolvers[channel](ctx, args.userId)
+        // 2. Call dispatcher.dispatch(channel, address, rendered)
+        // 3. Update delivery log status based on result
+        console.log(
+          `[notifications] channel=${channel} user=${args.userId}:`,
+          rendered,
+        );
+
+        // Update delivery log to "sent" status (stub behavior)
+        await ctx.runMutation(this.component.delivery.updateDeliveryStatus, {
+          deliveryLogId,
+          status: "sent" as const,
+          sentAt: Date.now(),
+        });
+      }
     }
 
     return notificationId;

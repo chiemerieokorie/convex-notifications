@@ -65,6 +65,10 @@
     "./convex.config": {
       "types": "./dist/component/convex.config.d.ts",
       "default": "./dist/component/convex.config.js"
+    },
+    "./channels": {
+      "types": "./dist/component/channels/index.d.ts",
+      "default": "./dist/component/channels/index.js"
     }
   },
   "peerDependencies": {

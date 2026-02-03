@@ -53,6 +53,7 @@ Consumer App
 
 Component Internals
   src/component/        ← tables, core functions (runs inside component sandbox)
+  src/component/channels/ ← channel adapters (email, push, sms)
   src/client/           ← API factory, helpers (runs in consumer's function context)
   src/react/            ← React hooks for inbox + preferences
   src/test.ts           ← Test registration utility
@@ -169,9 +170,9 @@ await notification.send(ctx, {
 Tests use **Vitest** with **convex-test** in edge-runtime environment. Test files are colocated with source:
 
 ```
-src/component/lib.test.ts      # Component unit tests
-src/client/index.test.ts        # Client API integration tests
-example/convex/example.test.ts  # Example app tests
+src/component/channels/channels.test.ts  # Channel adapter unit tests
+src/client/index.test.ts                  # Client API integration tests
+example/convex/example.test.ts            # Example app tests
 ```
 
 Each test directory has a `setup.test.ts` that initializes `convexTest()` and registers the component. Always use `vi.useFakeTimers()` for deterministic tests.
@@ -211,11 +212,15 @@ That's it — one file, ~20 lines. No schema changes, no component modifications
 ## How to Add a New Channel
 
 1. Create an adapter file in `src/component/channels/` (e.g., `slack.ts`)
-2. Implement the channel interface: `render(template, data)` and `dispatch(address, rendered)`
-3. Register the channel in the component's channel registry
-4. Add a resolver type to the `createNotificationsApi()` config interface
-5. Run `npm run build:codegen`
-6. Add the channel to `createNotification()` channel templates type
+2. Implement the `ChannelAdapter` interface with `name` and `dispatch(address, content)` method
+3. Add the rendered content type to `types.ts` (e.g., `RenderedSlack`)
+4. Register the adapter in `dispatcher.ts` and update `ChannelContent` type
+5. Export from `src/component/channels/index.ts`
+6. Add a resolver type to `NotificationsOptions` in `src/client/types.ts`
+7. Add template type to `ChannelTemplates` in `src/client/types.ts`
+8. Update the `send()` method in `src/client/index.ts` to render and dispatch
+9. Run `npm run build:codegen`
+10. Add tests in `src/component/channels/channels.test.ts`
 
 ## Documentation Maintenance
 
