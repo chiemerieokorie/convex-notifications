@@ -1,3 +1,9 @@
+## [1.2.1](https://github.com/chiemerieokorie/convex-notifications/compare/v1.2.0...v1.2.1) (2026-02-03)
+
+### Bug Fixes
+
+* update delivery status after dispatch ([a6ca8de](https://github.com/chiemerieokorie/convex-notifications/commit/a6ca8dea4869c10ee4a262a5c82ec4f5664497fd))
+
 ## [1.2.0](https://github.com/chiemerieokorie/convex-notifications/compare/v1.1.0...v1.2.0) (2026-02-03)
 
 ### Features
