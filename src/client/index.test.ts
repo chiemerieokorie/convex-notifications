@@ -93,6 +93,16 @@ export const send = mutation({
     }),
 });
 
+export const getDeliveryLogs = query({
+  args: { notificationId: v.string() },
+  returns: v.array(v.any()),
+  handler: async (ctx, args) => {
+    return await ctx.runQuery(components.notifications.delivery.getDeliveryLogs, {
+      notificationId: args.notificationId as any,
+    });
+  },
+});
+
 const testApi = (
   anyApi as unknown as ApiFromModules<{
     "index.test": {
@@ -104,6 +114,7 @@ const testApi = (
       getPreferences: typeof getPreferences;
       updatePreference: typeof updatePreference;
       send: typeof send;
+      getDeliveryLogs: typeof getDeliveryLogs;
     };
   }>
 )["index.test"];
@@ -235,5 +246,26 @@ describe("client integration", () => {
     // Notification was still created in inbox
     const result = await t.query(testApi.list, {});
     expect(result.notifications).toHaveLength(1);
+  });
+
+  test("delivery status updates to sent after dispatch", async () => {
+    const t = initConvexTest().withIdentity({ subject: "user1" });
+
+    const notificationId = await t.mutation(testApi.send, {
+      userId: "user1",
+      data: { message: "Hello!" },
+    });
+
+    // Delivery logs should be created and updated to "sent"
+    const logs = await t.query(testApi.getDeliveryLogs, { notificationId });
+
+    expect(logs).toHaveLength(1);
+    expect(logs[0].channel).toBe("email");
+    expect(logs[0].status).toBe("sent");
+    expect(logs[0].sentAt).toBeDefined();
+    expect(logs[0].metadata).toEqual({
+      subject: "Test Email",
+      body: "Hello!",
+    });
   });
 });
