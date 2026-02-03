@@ -85,6 +85,38 @@ export class Notifications {
     );
   }
 
+  async registerPushToken(
+    ctx: RunMutationCtx,
+    args: {
+      token: string;
+      platform?: "ios" | "android" | "web";
+      deviceId?: string;
+    },
+  ) {
+    const userId = await this.options.auth(ctx);
+    return await ctx.runMutation(this.component.pushTokens.registerPushToken, {
+      userId,
+      token: args.token,
+      platform: args.platform,
+      deviceId: args.deviceId,
+    });
+  }
+
+  async getPushTokens(ctx: RunQueryCtx) {
+    const userId = await this.options.auth(ctx);
+    return await ctx.runQuery(this.component.pushTokens.getPushTokens, {
+      userId,
+    });
+  }
+
+  async deletePushToken(ctx: RunMutationCtx, token: string) {
+    const userId = await this.options.auth(ctx);
+    return await ctx.runMutation(this.component.pushTokens.deletePushToken, {
+      userId,
+      token,
+    });
+  }
+
   async send<T>(
     ctx: RunMutationCtx,
     definition: NotificationDefinition<T>,
