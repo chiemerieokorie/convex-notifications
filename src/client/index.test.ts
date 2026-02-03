@@ -1,6 +1,6 @@
 import { describe, expect, test, vi, beforeEach, afterEach } from "vitest";
 import { anyApi, type ApiFromModules } from "convex/server";
-import { mutationGeneric } from "convex/server";
+import { mutationGeneric, queryGeneric } from "convex/server";
 import { components, initConvexTest } from "./setup.test.js";
 import { Notifications } from "./index.js";
 import type { NotificationDefinition } from "./types.js";
@@ -26,6 +26,45 @@ const testEventDef: NotificationDefinition<{ message: string }> = {
     email: {
       subject: () => "Test Email",
       body: (data) => data.message,
+    },
+  },
+};
+
+// Test notification with HTML email (React Email pattern)
+const htmlEmailDef: NotificationDefinition<{ userName: string }> = {
+  event: "test.html-email",
+  dataValidator: v.object({ userName: v.string() }),
+  category: "testing",
+  channels: {
+    inbox: {
+      title: (data) => `Welcome, ${data.userName}!`,
+      body: () => "Thanks for joining.",
+    },
+    email: {
+      subject: (data) => `Welcome, ${data.userName}`,
+      body: (data) => `Hello ${data.userName}, welcome to the platform.`,
+      html: (data) => `<h1>Welcome, ${data.userName}!</h1><p>Thanks for joining.</p>`,
+    },
+  },
+};
+
+// Test notification with async HTML email (simulating React Email render())
+const asyncHtmlEmailDef: NotificationDefinition<{ userName: string }> = {
+  event: "test.async-html-email",
+  dataValidator: v.object({ userName: v.string() }),
+  category: "testing",
+  channels: {
+    inbox: {
+      title: (data) => `Hello, ${data.userName}`,
+      body: () => "Async email test.",
+    },
+    email: {
+      subject: (data) => `Hello ${data.userName}`,
+      body: (data) => `Hello ${data.userName}`,
+      html: async (data) => {
+        // Simulates React Email's render() which returns a Promise
+        return `<html><body><h1>Hello ${data.userName}</h1></body></html>`;
+      },
     },
   },
 };
@@ -60,6 +99,40 @@ export const send = mutationGeneric({
     }),
 });
 
+export const getDeliveryLogs = queryGeneric({
+  args: { notificationId: v.string() },
+  returns: v.array(v.any()),
+  handler: async (ctx, args) => {
+    return await ctx.runQuery(components.notifications.delivery.getDeliveryLogs, {
+      notificationId: args.notificationId as any,
+    });
+  },
+});
+
+export const sendHtmlEmail = mutationGeneric({
+  args: {
+    userId: v.string(),
+    data: v.object({ userName: v.string() }),
+  },
+  handler: (ctx, args) =>
+    notifications.send(ctx, htmlEmailDef, {
+      userId: args.userId,
+      data: args.data,
+    }),
+});
+
+export const sendAsyncHtmlEmail = mutationGeneric({
+  args: {
+    userId: v.string(),
+    data: v.object({ userName: v.string() }),
+  },
+  handler: (ctx, args) =>
+    notifications.send(ctx, asyncHtmlEmailDef, {
+      userId: args.userId,
+      data: args.data,
+    }),
+});
+
 const testApi = (
   anyApi as unknown as ApiFromModules<{
     "index.test": {
@@ -71,6 +144,9 @@ const testApi = (
       getPreferences: typeof getPreferences;
       updatePreference: typeof updatePreference;
       send: typeof send;
+      getDeliveryLogs: typeof getDeliveryLogs;
+      sendHtmlEmail: typeof sendHtmlEmail;
+      sendAsyncHtmlEmail: typeof sendAsyncHtmlEmail;
     };
   }>
 )["index.test"];
@@ -202,5 +278,57 @@ describe("client integration", () => {
     // Notification was still created in inbox
     const result = await t.query(testApi.list, {});
     expect(result.notifications).toHaveLength(1);
+  });
+
+  test("delivery status updates to sent after dispatch", async () => {
+    const t = initConvexTest().withIdentity({ subject: "user1" });
+
+    const notificationId = await t.mutation(testApi.send, {
+      userId: "user1",
+      data: { message: "Hello!" },
+    });
+
+    // Delivery logs should be created and updated to "sent"
+    const logs = await t.query(testApi.getDeliveryLogs, { notificationId });
+
+    expect(logs).toHaveLength(1);
+    expect(logs[0].channel).toBe("email");
+    expect(logs[0].status).toBe("sent");
+    expect(logs[0].sentAt).toBeDefined();
+    expect(logs[0].metadata).toEqual({
+      subject: "Test Email",
+      body: "Hello!",
+    });
+  });
+
+  test("email with sync html field renders correctly", async () => {
+    const t = initConvexTest().withIdentity({ subject: "user1" });
+
+    const notificationId = await t.mutation(testApi.sendHtmlEmail, {
+      userId: "user1",
+      data: { userName: "Alice" },
+    });
+    expect(notificationId).toBeDefined();
+
+    // Notification should be in inbox with rendered title
+    const result = await t.query(testApi.list, {});
+    expect(result.notifications).toHaveLength(1);
+    expect(result.notifications[0].title).toBe("Welcome, Alice!");
+    expect(result.notifications[0].body).toBe("Thanks for joining.");
+  });
+
+  test("email with async html field renders correctly", async () => {
+    const t = initConvexTest().withIdentity({ subject: "user1" });
+
+    const notificationId = await t.mutation(testApi.sendAsyncHtmlEmail, {
+      userId: "user1",
+      data: { userName: "Bob" },
+    });
+    expect(notificationId).toBeDefined();
+
+    // Notification should be in inbox
+    const result = await t.query(testApi.list, {});
+    expect(result.notifications).toHaveLength(1);
+    expect(result.notifications[0].title).toBe("Hello, Bob");
   });
 });

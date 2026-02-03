@@ -12,7 +12,7 @@ Semantic versioning roadmap for `convex-notifications`.
 - [x] Idempotency via `deduplicationKey`
 - [x] Inbox: `list` (paginated), `unreadCount`, `markRead`, `markAllRead`, `archive`
 - [x] 3-level preference resolution (global > category > event)
-- [x] `html?` field on email templates (React Email compatible)
+- [x] `html?` field on email templates (React Email compatible) ✓ implemented
 - [x] Example app with 35 integration tests
 - [x] CI: test/lint/typecheck with release gated on passing tests
 - [ ] Channel adapters: push (Expo), email (Resend), SMS (Twilio)
