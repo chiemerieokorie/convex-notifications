@@ -1,3 +1,9 @@
+## [1.2.0](https://github.com/chiemerieokorie/convex-notifications/compare/v1.1.0...v1.2.0) (2026-02-03)
+
+### Features
+
+* **email:** implement html field for React Email support ([42aa387](https://github.com/chiemerieokorie/convex-notifications/commit/42aa38737a994070593cd4ebef309848f045e2e1))
+
 ## [Unreleased]
 
 ### Features
