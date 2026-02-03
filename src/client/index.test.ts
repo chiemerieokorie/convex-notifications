@@ -133,14 +133,14 @@ describe("client integration", () => {
   test("unread count decreases after markRead", async () => {
     const t = initConvexTest().withIdentity({ subject: "user1" });
 
-    const notificationId = await t.mutation(testApi.send, {
+    const result = await t.mutation(testApi.send, {
       userId: "user1",
       data: { message: "Test" },
     });
 
     expect(await t.query(testApi.unreadCount, {})).toBe(1);
 
-    await t.mutation(testApi.markRead, { notificationId });
+    await t.mutation(testApi.markRead, { notificationId: result.notificationId });
     expect(await t.query(testApi.unreadCount, {})).toBe(0);
   });
 
@@ -165,12 +165,12 @@ describe("client integration", () => {
   test("archive removes from list", async () => {
     const t = initConvexTest().withIdentity({ subject: "user1" });
 
-    const notificationId = await t.mutation(testApi.send, {
+    const sendResult = await t.mutation(testApi.send, {
       userId: "user1",
       data: { message: "Test" },
     });
 
-    await t.mutation(testApi.archive, { notificationId });
+    await t.mutation(testApi.archive, { notificationId: sendResult.notificationId });
 
     const result = await t.query(testApi.list, {});
     expect(result.notifications).toHaveLength(0);
