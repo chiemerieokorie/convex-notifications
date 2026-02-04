@@ -113,4 +113,24 @@ export default defineSchema({
   })
     .index("by_status_nextRetryAt", ["status", "nextRetryAt"])
     .index("by_notificationId", ["notificationId"]),
+
+  /**
+   * Channel fallback queue.
+   * Tracks push notifications that should fall back to email if unread.
+   */
+  fallbackQueue: defineTable({
+    notificationId: v.id("notifications"),
+    userId: v.string(),
+    fromChannel: v.string(), // e.g., "push"
+    toChannel: v.string(), // e.g., "email"
+    fallbackAt: v.number(), // When to trigger fallback
+    status: v.union(
+      v.literal("pending"),
+      v.literal("cancelled"), // User read the notification
+      v.literal("triggered"), // Fallback was sent
+    ),
+    triggeredAt: v.optional(v.number()),
+  })
+    .index("by_status_fallbackAt", ["status", "fallbackAt"])
+    .index("by_notificationId", ["notificationId"]),
 });

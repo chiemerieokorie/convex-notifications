@@ -36,4 +36,16 @@ crons.interval(
   { batchSize: 50 },
 );
 
+/**
+ * Process channel fallbacks every minute.
+ * This handles falling back to alternative channels (e.g., push → email)
+ * when notifications remain unread.
+ */
+crons.interval(
+  "process channel fallbacks",
+  { minutes: 1 },
+  internal.fallback.processFallbacks,
+  { batchSize: 50 },
+);
+
 export default crons;

@@ -9,10 +9,12 @@
  */
 
 import type * as delivery from "../delivery.js";
+import type * as fallback from "../fallback.js";
 import type * as inbox from "../inbox.js";
 import type * as notifications from "../notifications.js";
 import type * as preferences from "../preferences.js";
 import type * as pushTokens from "../pushTokens.js";
+import type * as retry from "../retry.js";
 import type * as scheduled from "../scheduled.js";
 
 import type {
@@ -24,10 +26,12 @@ import { anyApi, componentsGeneric } from "convex/server";
 
 const fullApi: ApiFromModules<{
   delivery: typeof delivery;
+  fallback: typeof fallback;
   inbox: typeof inbox;
   notifications: typeof notifications;
   preferences: typeof preferences;
   pushTokens: typeof pushTokens;
+  retry: typeof retry;
   scheduled: typeof scheduled;
 }> = anyApi as any;
 

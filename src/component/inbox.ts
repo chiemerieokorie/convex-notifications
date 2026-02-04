@@ -61,6 +61,20 @@ export const markRead = internalMutation({
       throw new Error("Notification not found");
     }
     await ctx.db.patch(args.notificationId, { readAt: Date.now() });
+
+    // Cancel any pending fallbacks for this notification
+    const pendingFallbacks = await ctx.db
+      .query("fallbackQueue")
+      .withIndex("by_notificationId", (q) =>
+        q.eq("notificationId", args.notificationId),
+      )
+      .filter((q) => q.eq(q.field("status"), "pending"))
+      .collect();
+
+    for (const fallback of pendingFallbacks) {
+      await ctx.db.patch(fallback._id, { status: "cancelled" });
+    }
+
     return null;
   },
 });
@@ -78,6 +92,17 @@ export const markAllRead = internalMutation({
     const now = Date.now();
     for (const n of unread) {
       await ctx.db.patch(n._id, { readAt: now });
+
+      // Cancel any pending fallbacks for this notification
+      const pendingFallbacks = await ctx.db
+        .query("fallbackQueue")
+        .withIndex("by_notificationId", (q) => q.eq("notificationId", n._id))
+        .filter((q) => q.eq(q.field("status"), "pending"))
+        .collect();
+
+      for (const fallback of pendingFallbacks) {
+        await ctx.db.patch(fallback._id, { status: "cancelled" });
+      }
     }
     return null;
   },
