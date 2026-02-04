@@ -3,15 +3,31 @@ import type {
   FunctionReference,
   FunctionArgs,
   FunctionReturnType,
-  Scheduler,
 } from "convex/server";
+import { queryGeneric, mutationGeneric } from "convex/server";
+import { v } from "convex/values";
 import type { ComponentApi } from "../component/_generated/component.js";
-import type { NotificationsOptions, NotificationDefinition } from "./types.js";
 import type {
-  RenderedEmail,
-  RenderedPush,
-  RenderedSms,
-} from "../component/channels/index.js";
+  NotificationsOptions,
+  NotificationDefinition,
+  RunQueryCtx,
+  RunMutationCtx,
+  RunActionCtx,
+  DeliveryResult,
+  SendResult,
+} from "./types.js";
+import type { PushNotifications } from "@convex-dev/expo-push-notifications";
+import type { Resend } from "@convex-dev/resend";
+import type { Twilio } from "@convex-dev/twilio";
+import {
+  dispatchEmail,
+  dispatchPush,
+  dispatchSms,
+  isActionContext,
+  type RenderedEmail,
+  type RenderedPush,
+  type RenderedSms,
+} from "./adapters.js";
 
 export type { NotificationsOptions, NotificationDefinition } from "./types.js";
 export type {
@@ -20,36 +36,49 @@ export type {
   InboxTemplate,
   PushTemplate,
   SmsTemplate,
+  ChannelConfig,
+  EmailChannelConfig,
+  PushChannelConfig,
+  SmsChannelConfig,
+  DeliveryResult,
+  SendResult,
+  RunQueryCtx,
+  RunMutationCtx,
+  RunActionCtx,
 } from "./types.js";
 
-// Re-export channel adapter types for consumers who want to extend or use them
-export type {
-  ChannelName,
-  ChannelConfig,
-  DeliveryStatus,
-  DispatchResult,
-  RenderedEmail,
-  RenderedPush,
-  RenderedSms,
-} from "../component/channels/index.js";
-
-// Type for dispatch functions (resolved after codegen)
-type DispatchApi = {
-  dispatchEmail: FunctionReference<"mutation", "internal">;
-  dispatchPush: FunctionReference<"mutation", "internal">;
-  dispatchSms: FunctionReference<"action", "internal">;
+/**
+ * Extended options that include child component clients for delivery.
+ */
+export type NotificationsWithChannelsOptions = NotificationsOptions & {
+  /**
+   * Child component clients for channel delivery.
+   * Pass these to enable actual delivery through each channel.
+   */
+  clients?: {
+    /**
+     * Resend client for email delivery.
+     * Create with: new Resend(components.resend, { ... })
+     */
+    email?: Resend;
+    /**
+     * Expo Push Notifications client for push delivery.
+     * Create with: new PushNotifications(components.pushNotifications, { ... })
+     */
+    push?: PushNotifications<string>;
+    /**
+     * Twilio client for SMS delivery.
+     * Create with: new Twilio(components.twilio, { ... })
+     */
+    sms?: Twilio<{ defaultFrom: string }>;
+  };
 };
 
 export class Notifications {
-  private dispatch: DispatchApi;
-
   constructor(
     public component: ComponentApi,
-    public options: NotificationsOptions,
-  ) {
-    // Type assertion for dispatch module (resolved after codegen)
-    this.dispatch = (component as ComponentApi & { dispatch: DispatchApi }).dispatch;
-  }
+    public options: NotificationsWithChannelsOptions,
+  ) {}
 
   async list(
     ctx: RunQueryCtx,
@@ -114,8 +143,55 @@ export class Notifications {
     );
   }
 
-  async send<T>(
+  /**
+   * Register a push notification token for a user.
+   * Uses the component's internal push token storage.
+   */
+  async registerPushToken(
     ctx: RunMutationCtx,
+    args: {
+      token: string;
+      platform?: "ios" | "android" | "web";
+      deviceId?: string;
+    },
+  ) {
+    const userId = await this.options.auth(ctx);
+    return await ctx.runMutation(this.component.pushTokens.registerPushToken, {
+      userId,
+      token: args.token,
+      platform: args.platform,
+      deviceId: args.deviceId,
+    });
+  }
+
+  /**
+   * Get all push tokens for the current user.
+   */
+  async getPushTokens(ctx: RunQueryCtx) {
+    const userId = await this.options.auth(ctx);
+    return await ctx.runQuery(this.component.pushTokens.getPushTokens, {
+      userId,
+    });
+  }
+
+  /**
+   * Delete a push token.
+   */
+  async deletePushToken(ctx: RunMutationCtx, token: string) {
+    const userId = await this.options.auth(ctx);
+    return await ctx.runMutation(this.component.pushTokens.deletePushToken, {
+      userId,
+      token,
+    });
+  }
+
+  /**
+   * Send a notification through all enabled channels.
+   *
+   * @returns The notification ID and delivery results for each channel
+   */
+  async send<T>(
+    ctx: RunMutationCtx | RunActionCtx,
     definition: NotificationDefinition<T>,
     args: {
       userId: string;
@@ -124,8 +200,9 @@ export class Notifications {
       deduplicationKey?: string;
       deduplicationTtlSeconds?: number;
     },
-  ) {
+  ): Promise<SendResult> {
     const data = args.data;
+    const deliveries: DeliveryResult[] = [];
 
     // 1. Check deduplication
     if (args.deduplicationKey) {
@@ -154,7 +231,7 @@ export class Notifications {
         event: definition.event,
         title,
         body,
-        data: args.data as any,
+        data: args.data as unknown,
         transactional: args.transactional,
       },
     );
@@ -192,131 +269,386 @@ export class Notifications {
     for (const channel of enabledChannels) {
       if (channel === "inbox") continue;
 
-      let rendered: RenderedEmail | RenderedPush | RenderedSms | undefined;
-
-      if (channel === "email" && definition.channels.email) {
-        const emailTemplate = definition.channels.email;
-        rendered = {
-          subject: emailTemplate.subject(data),
-          body: emailTemplate.body(data),
-          html: emailTemplate.html?.(data),
-        } satisfies RenderedEmail;
-      } else if (channel === "push" && definition.channels.push) {
-        rendered = {
-          title: definition.channels.push.title(data),
-          body: definition.channels.push.body(data),
-        } satisfies RenderedPush;
-      } else if (channel === "sms" && definition.channels.sms) {
-        rendered = {
-          body: definition.channels.sms.body(data),
-        } satisfies RenderedSms;
-      }
-
-      if (!rendered) continue;
-
-      // Create delivery log entry with pending status
-      const deliveryLogId = await ctx.runMutation(
-        this.component.delivery.createDeliveryLog,
-        {
-          notificationId,
-          channel,
-          status: "pending" as const,
-          metadata: rendered,
-        },
+      const deliveryResult = await this.dispatchChannel(
+        ctx,
+        channel,
+        definition,
+        args.userId,
+        data,
+        notificationId,
       );
 
-      // Dispatch via child components
-      try {
-        if (channel === "email") {
-          const emailAddress = await this.options.resolvers?.email?.(ctx, args.userId);
-          if (emailAddress) {
-            const emailRendered = rendered as RenderedEmail;
-            await ctx.runMutation(this.dispatch.dispatchEmail, {
-              to: emailAddress,
-              subject: emailRendered.subject,
-              body: emailRendered.body,
-              html: emailRendered.html,
-            });
-            await ctx.runMutation(this.component.delivery.updateDeliveryStatus, {
-              deliveryLogId,
-              status: "sent" as const,
-              sentAt: Date.now(),
-            });
-          } else {
-            console.warn(`[notifications] No email address for user ${args.userId}`);
-            await ctx.runMutation(this.component.delivery.updateDeliveryStatus, {
-              deliveryLogId,
-              status: "failed" as const,
-              error: "No email address configured",
-            });
-          }
-        } else if (channel === "push") {
-          // Push notifications use userId directly (tokens managed by expo-push component)
-          const pushRendered = rendered as RenderedPush;
-          await ctx.runMutation(this.dispatch.dispatchPush, {
-            userId: args.userId,
-            title: pushRendered.title,
-            body: pushRendered.body,
-            data: pushRendered.data,
-          });
-          await ctx.runMutation(this.component.delivery.updateDeliveryStatus, {
-            deliveryLogId,
-            status: "sent" as const,
-            sentAt: Date.now(),
-          });
-        } else if (channel === "sms") {
-          const phoneNumber = await this.options.resolvers?.phone?.(ctx, args.userId);
-          if (phoneNumber) {
-            const smsRendered = rendered as RenderedSms;
-            // SMS requires action context, so we schedule it
-            await ctx.scheduler.runAfter(0, this.dispatch.dispatchSms, {
-              to: phoneNumber,
-              body: smsRendered.body,
-            });
-            await ctx.runMutation(this.component.delivery.updateDeliveryStatus, {
-              deliveryLogId,
-              status: "sent" as const,
-              sentAt: Date.now(),
-            });
-          } else {
-            console.warn(`[notifications] No phone number for user ${args.userId}`);
-            await ctx.runMutation(this.component.delivery.updateDeliveryStatus, {
-              deliveryLogId,
-              status: "failed" as const,
-              error: "No phone number configured",
-            });
-          }
-        }
-      } catch (error) {
-        console.error(`[notifications] Dispatch error for ${channel}:`, error);
-        await ctx.runMutation(this.component.delivery.updateDeliveryStatus, {
-          deliveryLogId,
-          status: "failed" as const,
-          error: error instanceof Error ? error.message : String(error),
-        });
+      if (deliveryResult) {
+        deliveries.push(deliveryResult);
       }
     }
 
-    return notificationId;
+    return { notificationId, deliveries };
+  }
+
+  /**
+   * Dispatch a notification to a specific channel.
+   */
+  private async dispatchChannel<T>(
+    ctx: RunMutationCtx | RunActionCtx,
+    channel: string,
+    definition: NotificationDefinition<T>,
+    userId: string,
+    data: T,
+    notificationId: string,
+  ): Promise<DeliveryResult | null> {
+    let rendered: Record<string, unknown> | undefined;
+    let result: DeliveryResult | undefined;
+
+    try {
+      if (channel === "email" && definition.channels.email) {
+        const emailTemplate = definition.channels.email;
+        const emailConfig = this.options.channels?.email;
+        const resendClient = this.options.clients?.email;
+
+        // Resolve email address
+        const emailResolver = this.options.resolvers?.email;
+        if (!emailResolver) {
+          throw new Error("Email resolver not configured");
+        }
+        const toEmail = await emailResolver(ctx as RunMutationCtx, userId);
+        if (!toEmail) {
+          return {
+            channel: "email",
+            status: "skipped",
+            error: "No email address for user",
+          };
+        }
+
+        // Support async html rendering (e.g., React Email)
+        const html = emailTemplate.html ? await emailTemplate.html(data) : undefined;
+
+        const renderedEmail: RenderedEmail = {
+          from: emailTemplate.from ?? emailConfig?.defaultFrom ?? "",
+          to: toEmail,
+          subject: emailTemplate.subject(data),
+          body: emailTemplate.body(data),
+          html,
+        };
+
+        rendered = renderedEmail;
+
+        if (!renderedEmail.from) {
+          throw new Error(
+            "No 'from' address configured. Set channels.email.defaultFrom or specify 'from' in the email template.",
+          );
+        }
+
+        // Dispatch via Resend if client is configured
+        if (resendClient) {
+          result = await dispatchEmail(
+            ctx as RunMutationCtx,
+            resendClient,
+            renderedEmail,
+          );
+        } else {
+          // Log stub message for development
+          console.log(
+            `[notifications] email dispatch (no client configured):`,
+            renderedEmail,
+          );
+          result = {
+            channel: "email",
+            status: "skipped",
+            error: "Email client not configured",
+          };
+        }
+      } else if (channel === "push" && definition.channels.push) {
+        const pushTemplate = definition.channels.push;
+        const pushConfig = this.options.channels?.push;
+        const pushClient = this.options.clients?.push;
+
+        const renderedPush: RenderedPush = {
+          userId,
+          title: pushTemplate.title(data),
+          body: pushTemplate.body(data),
+          data: pushTemplate.data?.(data),
+        };
+
+        rendered = renderedPush;
+
+        // Dispatch via Expo Push Notifications if client is configured
+        if (pushClient) {
+          result = await dispatchPush(
+            ctx as RunMutationCtx,
+            pushClient,
+            renderedPush,
+            pushConfig?.allowUnregisteredTokens ?? true,
+          );
+        } else {
+          console.log(
+            `[notifications] push dispatch (no client configured):`,
+            renderedPush,
+          );
+          result = {
+            channel: "push",
+            status: "skipped",
+            error: "Push client not configured",
+          };
+        }
+      } else if (channel === "sms" && definition.channels.sms) {
+        const smsTemplate = definition.channels.sms;
+        const smsConfig = this.options.channels?.sms;
+        const twilioClient = this.options.clients?.sms;
+
+        // Resolve phone number
+        const phoneResolver = this.options.resolvers?.phone;
+        if (!phoneResolver) {
+          throw new Error("Phone resolver not configured");
+        }
+        const toPhone = await phoneResolver(ctx as RunMutationCtx, userId);
+        if (!toPhone) {
+          return {
+            channel: "sms",
+            status: "skipped",
+            error: "No phone number for user",
+          };
+        }
+
+        const renderedSms: RenderedSms = {
+          from: smsTemplate.from ?? smsConfig?.defaultFrom ?? "",
+          to: toPhone,
+          body: smsTemplate.body(data),
+        };
+
+        rendered = renderedSms;
+
+        if (!renderedSms.from) {
+          throw new Error(
+            "No 'from' phone number configured. Set channels.sms.defaultFrom or specify 'from' in the SMS template.",
+          );
+        }
+
+        // Dispatch via Twilio if client is configured AND we have action context
+        if (twilioClient) {
+          if (isActionContext(ctx)) {
+            result = await dispatchSms(ctx, twilioClient, renderedSms);
+          } else {
+            // SMS requires action context - schedule via smsDispatchAction if configured
+            const smsAction = this.options.smsDispatchAction;
+            if (smsAction) {
+              await ctx.scheduler.runAfter(0, smsAction, {
+                notificationId,
+                rendered: renderedSms,
+              });
+              result = {
+                channel: "sms",
+                status: "sent",
+                error: "Scheduled for async delivery",
+              };
+            } else {
+              console.log(
+                `[notifications] SMS requires action context. Configure smsDispatchAction for async delivery.`,
+                renderedSms,
+              );
+              result = {
+                channel: "sms",
+                status: "skipped",
+                error:
+                  "SMS requires action context. Configure smsDispatchAction.",
+              };
+            }
+          }
+        } else {
+          console.log(
+            `[notifications] sms dispatch (no client configured):`,
+            renderedSms,
+          );
+          result = {
+            channel: "sms",
+            status: "skipped",
+            error: "SMS client not configured",
+          };
+        }
+      } else {
+        // Unknown channel
+        return null;
+      }
+
+      // Create delivery log entry
+      const status =
+        result.status === "sent"
+          ? "sent"
+          : result.status === "skipped"
+            ? "pending"
+            : "failed";
+
+      await ctx.runMutation(this.component.delivery.createDeliveryLog, {
+        notificationId,
+        channel,
+        status,
+        metadata: {
+          rendered,
+          externalId: result.externalId,
+          error: result.error,
+        },
+      });
+
+      return result;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+
+      // Log the error
+      console.error(`[notifications] ${channel} dispatch failed:`, error);
+
+      // Create failed delivery log entry
+      await ctx.runMutation(this.component.delivery.createDeliveryLog, {
+        notificationId,
+        channel,
+        status: "failed",
+        metadata: {
+          rendered,
+          error: errorMessage,
+        },
+      });
+
+      return {
+        channel,
+        status: "failed",
+        error: errorMessage,
+      };
+    }
+  }
+
+  /**
+   * Update delivery status for a notification channel.
+   * Call this from webhook handlers or after async delivery completes.
+   */
+  async updateDeliveryStatus(
+    ctx: RunMutationCtx,
+    args: {
+      deliveryLogId: string;
+      status: "sent" | "delivered" | "failed";
+      error?: string;
+      sentAt?: number;
+    },
+  ) {
+    return await ctx.runMutation(this.component.delivery.updateDeliveryStatus, {
+      deliveryLogId: args.deliveryLogId,
+      status: args.status,
+      error: args.error,
+      sentAt: args.sentAt,
+    });
+  }
+
+  /**
+   * Get delivery logs for a notification.
+   */
+  async getDeliveryLogs(ctx: RunQueryCtx, notificationId: string) {
+    return await ctx.runQuery(this.component.delivery.getDeliveryLogs, {
+      notificationId,
+    });
+  }
+
+  /**
+   * Returns pre-built query and mutation functions for direct export.
+   *
+   * Usage:
+   * ```ts
+   * export const { list, unreadCount, markRead, markAllRead, archive, getPreferences, updatePreference } = notifications.api();
+   * ```
+   */
+  api() {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const self = this;
+
+    return {
+      /**
+       * List notifications for the current user (paginated)
+       */
+      list: queryGeneric({
+        args: {
+          limit: v.optional(v.number()),
+          cursor: v.optional(v.number()),
+        },
+        returns: v.object({
+          notifications: v.array(v.any()),
+          cursor: v.union(v.number(), v.null()),
+        }),
+        handler: (ctx: RunQueryCtx, args: { limit?: number; cursor?: number }) =>
+          self.list(ctx, args),
+      }),
+
+      /**
+       * Get unread notification count for the current user
+       */
+      unreadCount: queryGeneric({
+        args: {},
+        returns: v.number(),
+        handler: (ctx: RunQueryCtx) => self.unreadCount(ctx),
+      }),
+
+      /**
+       * Mark a notification as read
+       */
+      markRead: mutationGeneric({
+        args: { notificationId: v.string() },
+        returns: v.null(),
+        handler: (ctx: RunMutationCtx, args: { notificationId: string }) =>
+          self.markRead(ctx, args.notificationId),
+      }),
+
+      /**
+       * Mark all notifications as read for the current user
+       */
+      markAllRead: mutationGeneric({
+        args: {},
+        returns: v.null(),
+        handler: (ctx: RunMutationCtx) => self.markAllRead(ctx),
+      }),
+
+      /**
+       * Archive a notification
+       */
+      archive: mutationGeneric({
+        args: { notificationId: v.string() },
+        returns: v.null(),
+        handler: (ctx: RunMutationCtx, args: { notificationId: string }) =>
+          self.archive(ctx, args.notificationId),
+      }),
+
+      /**
+       * Get notification preferences for the current user
+       */
+      getPreferences: queryGeneric({
+        args: {},
+        returns: v.array(v.any()),
+        handler: (ctx: RunQueryCtx) => self.getPreferences(ctx),
+      }),
+
+      /**
+       * Update a notification preference
+       */
+      updatePreference: mutationGeneric({
+        args: {
+          level: v.union(
+            v.literal("global"),
+            v.literal("category"),
+            v.literal("event"),
+          ),
+          key: v.optional(v.string()),
+          channel: v.string(),
+          enabled: v.boolean(),
+        },
+        returns: v.string(),
+        handler: (
+          ctx: RunMutationCtx,
+          args: {
+            level: "global" | "category" | "event";
+            key?: string;
+            channel: string;
+            enabled: boolean;
+          },
+        ) => self.updatePreference(ctx, args),
+      }),
+    };
   }
 }
 
 export default Notifications;
-
-// Type utilities
-
-export type RunQueryCtx = {
-  runQuery: <Query extends FunctionReference<"query", "internal">>(
-    query: Query,
-    args: FunctionArgs<Query>,
-  ) => Promise<FunctionReturnType<Query>>;
-  auth: Auth;
-};
-
-export type RunMutationCtx = RunQueryCtx & {
-  runMutation: <Mutation extends FunctionReference<"mutation", "internal">>(
-    mutation: Mutation,
-    args: FunctionArgs<Mutation>,
-  ) => Promise<FunctionReturnType<Mutation>>;
-  scheduler: Scheduler;
-};

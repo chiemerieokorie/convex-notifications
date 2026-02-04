@@ -10,7 +10,8 @@ A full-stack notifications engine for Convex apps. Real-time inbox, multi-channe
 
 - Real-time inbox with `list`, `unreadCount`, `markRead`, `markAllRead`, `archive`
 - Multi-channel delivery: push (Expo), email (Resend), SMS (Twilio)
-- `createNotification<T>()` factory — define an event in one file (~20 lines)
+- `NotificationDefinition<T>` types — define an event in one file (~20 lines)
+- `api()` method for plug-and-play query/mutation exports (no boilerplate!)
 - 3-level user preferences: global > category > event
 - Transactional notifications that bypass preferences
 - Idempotency via deduplication keys
@@ -49,19 +50,10 @@ export default app;
 
 ```ts
 // convex/notifications.ts
-import { createNotificationsApi } from "convex-notifications";
+import { Notifications } from "convex-notifications";
 import { components } from "./_generated/api";
 
-export const {
-  list,
-  unreadCount,
-  markRead,
-  markAllRead,
-  archive,
-  registerPushToken,
-  updatePreferences,
-  getPreferences,
-} = createNotificationsApi(components.notifications, {
+const notifications = new Notifications(components.notifications, {
   auth: async (ctx) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
@@ -82,6 +74,17 @@ export const {
     },
   },
 });
+
+// Use api() for plug-and-play exports (no boilerplate!)
+export const {
+  list,
+  unreadCount,
+  markRead,
+  markAllRead,
+  archive,
+  getPreferences,
+  updatePreference,
+} = notifications.api();
 ```
 
 ### 3. Deploy
@@ -211,16 +214,16 @@ Users can control which channels are enabled at three levels: global, category, 
 const prefs = useQuery(api.notifications.getPreferences);
 
 // Update preferences
-const update = useMutation(api.notifications.updatePreferences);
+const update = useMutation(api.notifications.updatePreference);
 
 // Disable email globally
 await update({ level: "global", channel: "email", enabled: false });
 
 // Enable email for a specific category
-await update({ level: "category", category: "social", channel: "email", enabled: true });
+await update({ level: "category", key: "social", channel: "email", enabled: true });
 
 // Disable push for a specific event
-await update({ level: "event", event: "comment.reply", channel: "push", enabled: false });
+await update({ level: "event", key: "comment.reply", channel: "push", enabled: false });
 ```
 
 ## Push Token Registration
@@ -255,16 +258,20 @@ function NotificationBell() {
 
 ## React Email Support
 
-Use `emailComponent` to render rich emails with React Email:
+Use the `html` field to render rich HTML emails. This works with React Email's `render()` function or any other HTML-producing tool:
 
 ```ts
+import { render } from "@react-email/components";
+import WelcomeEmail from "./emails/WelcomeEmail";
+
 export const welcomeNotification = createNotification({
   event: "user.welcome",
   dataValidator: v.object({ userName: v.string() }),
   channels: {
     email: {
       subject: (data) => `Welcome, ${data.userName}`,
-      emailComponent: (data) => <WelcomeEmail userName={data.userName} />,
+      body: (data) => `Welcome ${data.userName}! Thanks for joining.`, // Plain text fallback
+      html: (data) => render(<WelcomeEmail userName={data.userName} />),
     },
     inbox: {
       title: (data) => `Welcome, ${data.userName}!`,
@@ -272,6 +279,16 @@ export const welcomeNotification = createNotification({
     },
   },
 });
+```
+
+The `html` field supports both sync and async functions, so you can use `await render()` if needed:
+
+```ts
+email: {
+  subject: (data) => `Welcome, ${data.userName}`,
+  body: (data) => `Plain text version`,
+  html: async (data) => await render(<WelcomeEmail userName={data.userName} />),
+},
 ```
 
 ## API Reference
@@ -283,22 +300,21 @@ export const welcomeNotification = createNotification({
 | `markRead` | mutation | required | Mark a notification as read |
 | `markAllRead` | mutation | required | Mark all notifications as read (timestamp-based) |
 | `archive` | mutation | required | Archive a notification |
-| `registerPushToken` | mutation | required | Register an Expo push token |
-| `updatePreferences` | mutation | required | Update channel preferences (global/category/event) |
 | `getPreferences` | query | required | Get user's notification preferences |
+| `updatePreference` | mutation | required | Update channel preferences (global/category/event) |
 
 ## Configuration
 
 ```ts
-interface NotificationsConfig {
+interface NotificationsOptions {
   /** Resolve the current user ID from the request context. */
-  auth: (ctx: QueryCtx | MutationCtx | ActionCtx) => Promise<string>;
+  auth: (ctx: { auth: Auth }) => Promise<string>;
 
   /** Resolve delivery addresses per channel. Return null to skip the channel. */
-  resolvers: {
-    email?: (ctx: QueryCtx, userId: string) => Promise<string | null>;
-    phone?: (ctx: QueryCtx, userId: string) => Promise<string | null>;
-    pushToken?: (ctx: QueryCtx, userId: string) => Promise<string | null>;
+  resolvers?: {
+    email?: (ctx: { auth: Auth }, userId: string) => Promise<string | null>;
+    phone?: (ctx: { auth: Auth }, userId: string) => Promise<string | null>;
+    pushToken?: (ctx: { auth: Auth }, userId: string) => Promise<string | null>;
   };
 }
 ```
@@ -334,7 +350,7 @@ npx convex dev
 
 ### Auth provider mismatch
 
-The `auth` function in `createNotificationsApi()` must match your auth setup. For Convex Auth:
+The `auth` function in `new Notifications()` must match your auth setup. For Convex Auth:
 ```ts
 auth: async (ctx) => {
   const userId = await getAuthUserId(ctx);
