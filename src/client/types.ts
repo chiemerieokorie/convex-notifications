@@ -18,6 +18,7 @@ export type InboxTemplate<T> = {
 export type EmailTemplate<T> = {
   subject: (data: T) => string;
   body: (data: T) => string;
+  html?: (data: T) => string;
 };
 
 export type PushTemplate<T> = {

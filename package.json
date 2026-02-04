@@ -109,5 +109,10 @@
     "vitest": "4.0.18"
   },
   "types": "./dist/client/index.d.ts",
-  "module": "./dist/client/index.js"
+  "module": "./dist/client/index.js",
+  "dependencies": {
+    "@convex-dev/expo-push-notifications": "^0.3.1",
+    "@convex-dev/resend": "^0.2.3",
+    "@convex-dev/twilio": "^0.2.1"
+  }
 }

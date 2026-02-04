@@ -16,17 +16,15 @@ Semantic versioning roadmap for `convex-notifications`.
 - [x] Example app with 35 integration tests
 - [x] CI: test/lint/typecheck with release gated on passing tests
 - [x] Channel adapter infrastructure (`src/component/channels/`)
-- [ ] Channel adapter integration: push (Expo), email (Resend), SMS (Twilio)
+- [x] Channel adapter integration: push (Expo), email (Resend), SMS (Twilio)
 - [ ] Push token registration passthrough
 - [ ] React hooks for inbox and preferences
 
-## v0.2.0 - Channel Adapter Integration
+## v0.2.0 - Push Token Management & Hooks
 
-- Integrate expo-push-notifications child component for push dispatch
-- Integrate resend child component for email dispatch with React Email rendering
-- Integrate twilio child component for SMS dispatch
-- Push token registration and management
-- Delivery log status tracking per channel
+- Push token registration and management passthrough
+- Delivery log status tracking with webhook handlers
+- React hooks for inbox and preferences
 
 ## v0.3.0 - React Hooks + Client SDK
 

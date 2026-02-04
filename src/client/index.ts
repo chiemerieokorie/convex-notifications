@@ -3,14 +3,14 @@ import type {
   FunctionReference,
   FunctionArgs,
   FunctionReturnType,
+  Scheduler,
 } from "convex/server";
 import type { ComponentApi } from "../component/_generated/component.js";
 import type { NotificationsOptions, NotificationDefinition } from "./types.js";
-import {
-  getDefaultDispatcher,
-  type RenderedEmail,
-  type RenderedPush,
-  type RenderedSms,
+import type {
+  RenderedEmail,
+  RenderedPush,
+  RenderedSms,
 } from "../component/channels/index.js";
 
 export type { NotificationsOptions, NotificationDefinition } from "./types.js";
@@ -33,11 +33,23 @@ export type {
   RenderedSms,
 } from "../component/channels/index.js";
 
+// Type for dispatch functions (resolved after codegen)
+type DispatchApi = {
+  dispatchEmail: FunctionReference<"mutation", "internal">;
+  dispatchPush: FunctionReference<"mutation", "internal">;
+  dispatchSms: FunctionReference<"action", "internal">;
+};
+
 export class Notifications {
+  private dispatch: DispatchApi;
+
   constructor(
     public component: ComponentApi,
     public options: NotificationsOptions,
-  ) {}
+  ) {
+    // Type assertion for dispatch module (resolved after codegen)
+    this.dispatch = (component as ComponentApi & { dispatch: DispatchApi }).dispatch;
+  }
 
   async list(
     ctx: RunQueryCtx,
@@ -177,17 +189,17 @@ export class Notifications {
     }
 
     // 5. Dispatch to each enabled non-inbox channel
-    const dispatcher = getDefaultDispatcher();
-
     for (const channel of enabledChannels) {
       if (channel === "inbox") continue;
 
       let rendered: RenderedEmail | RenderedPush | RenderedSms | undefined;
 
       if (channel === "email" && definition.channels.email) {
+        const emailTemplate = definition.channels.email;
         rendered = {
-          subject: definition.channels.email.subject(data),
-          body: definition.channels.email.body(data),
+          subject: emailTemplate.subject(data),
+          body: emailTemplate.body(data),
+          html: emailTemplate.html?.(data),
         } satisfies RenderedEmail;
       } else if (channel === "push" && definition.channels.push) {
         rendered = {
@@ -213,25 +225,74 @@ export class Notifications {
         },
       );
 
-      // Dispatch via channel adapter (stub - real dispatch will use child components)
-      // TODO: When child components are integrated, this will call ctx.runAction
-      // to the appropriate component (resend, expo-push, twilio)
-      if (dispatcher.isSupported(channel)) {
-        // For now, resolvers are not called - addresses will come from consumer config
-        // This is a stub that logs the dispatch; real implementation will:
-        // 1. Resolve address via this.options.resolvers[channel](ctx, args.userId)
-        // 2. Call dispatcher.dispatch(channel, address, rendered)
-        // 3. Update delivery log status based on result
-        console.log(
-          `[notifications] channel=${channel} user=${args.userId}:`,
-          rendered,
-        );
-
-        // Update delivery log to "sent" status (stub behavior)
+      // Dispatch via child components
+      try {
+        if (channel === "email") {
+          const emailAddress = await this.options.resolvers?.email?.(ctx, args.userId);
+          if (emailAddress) {
+            const emailRendered = rendered as RenderedEmail;
+            await ctx.runMutation(this.dispatch.dispatchEmail, {
+              to: emailAddress,
+              subject: emailRendered.subject,
+              body: emailRendered.body,
+              html: emailRendered.html,
+            });
+            await ctx.runMutation(this.component.delivery.updateDeliveryStatus, {
+              deliveryLogId,
+              status: "sent" as const,
+              sentAt: Date.now(),
+            });
+          } else {
+            console.warn(`[notifications] No email address for user ${args.userId}`);
+            await ctx.runMutation(this.component.delivery.updateDeliveryStatus, {
+              deliveryLogId,
+              status: "failed" as const,
+              error: "No email address configured",
+            });
+          }
+        } else if (channel === "push") {
+          // Push notifications use userId directly (tokens managed by expo-push component)
+          const pushRendered = rendered as RenderedPush;
+          await ctx.runMutation(this.dispatch.dispatchPush, {
+            userId: args.userId,
+            title: pushRendered.title,
+            body: pushRendered.body,
+            data: pushRendered.data,
+          });
+          await ctx.runMutation(this.component.delivery.updateDeliveryStatus, {
+            deliveryLogId,
+            status: "sent" as const,
+            sentAt: Date.now(),
+          });
+        } else if (channel === "sms") {
+          const phoneNumber = await this.options.resolvers?.phone?.(ctx, args.userId);
+          if (phoneNumber) {
+            const smsRendered = rendered as RenderedSms;
+            // SMS requires action context, so we schedule it
+            await ctx.scheduler.runAfter(0, this.dispatch.dispatchSms, {
+              to: phoneNumber,
+              body: smsRendered.body,
+            });
+            await ctx.runMutation(this.component.delivery.updateDeliveryStatus, {
+              deliveryLogId,
+              status: "sent" as const,
+              sentAt: Date.now(),
+            });
+          } else {
+            console.warn(`[notifications] No phone number for user ${args.userId}`);
+            await ctx.runMutation(this.component.delivery.updateDeliveryStatus, {
+              deliveryLogId,
+              status: "failed" as const,
+              error: "No phone number configured",
+            });
+          }
+        }
+      } catch (error) {
+        console.error(`[notifications] Dispatch error for ${channel}:`, error);
         await ctx.runMutation(this.component.delivery.updateDeliveryStatus, {
           deliveryLogId,
-          status: "sent" as const,
-          sentAt: Date.now(),
+          status: "failed" as const,
+          error: error instanceof Error ? error.message : String(error),
         });
       }
     }
@@ -257,4 +318,5 @@ export type RunMutationCtx = RunQueryCtx & {
     mutation: Mutation,
     args: FunctionArgs<Mutation>,
   ) => Promise<FunctionReturnType<Mutation>>;
+  scheduler: Scheduler;
 };
