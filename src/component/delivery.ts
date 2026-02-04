@@ -14,6 +14,7 @@ export const createDeliveryLog = internalMutation({
     channel: v.string(),
     status: statusValidator,
     metadata: v.optional(v.any()),
+    externalId: v.optional(v.string()),
   },
   returns: v.id("deliveryLog"),
   handler: async (ctx, args) => {
@@ -22,6 +23,7 @@ export const createDeliveryLog = internalMutation({
       channel: args.channel,
       status: args.status,
       metadata: args.metadata,
+      externalId: args.externalId,
     });
   },
 });
@@ -44,9 +46,21 @@ export const updateDeliveryStatus = internalMutation({
   },
 });
 
+const deliveryLogValidator = v.object({
+  _id: v.id("deliveryLog"),
+  _creationTime: v.number(),
+  notificationId: v.id("notifications"),
+  channel: v.string(),
+  status: statusValidator,
+  error: v.optional(v.string()),
+  sentAt: v.optional(v.number()),
+  metadata: v.optional(v.any()),
+  externalId: v.optional(v.string()),
+});
+
 export const getDeliveryLogs = internalQuery({
   args: { notificationId: v.id("notifications") },
-  returns: v.array(v.any()),
+  returns: v.array(deliveryLogValidator),
   handler: async (ctx, args) => {
     return await ctx.db
       .query("deliveryLog")
@@ -71,31 +85,32 @@ export const updateDeliveryFromWebhook = internalMutation({
   },
   returns: v.boolean(),
   handler: async (ctx, args) => {
-    // Find delivery log by externalId in metadata
-    const logs = await ctx.db
+    // Find delivery log by externalId using the index (O(1) lookup)
+    const log = await ctx.db
       .query("deliveryLog")
-      .withIndex("by_status")
-      .filter((q) => q.eq(q.field("channel"), args.channel))
-      .collect();
-
-    // Find the log with matching externalId
-    const log = logs.find((l) => {
-      const metadata = l.metadata as { externalId?: string } | undefined;
-      return metadata?.externalId === args.externalId;
-    });
+      .withIndex("by_externalId", (q) => q.eq("externalId", args.externalId))
+      .first();
 
     if (!log) {
-      console.log(
-        `[webhook] No delivery log found for externalId: ${args.externalId}`,
-      );
+      // No delivery log found - this can happen if the webhook arrives
+      // before the delivery log is created or for unknown external IDs
       return false;
     }
+
+    // Verify the channel matches
+    if (log.channel !== args.channel) {
+      return false;
+    }
+
+    // Only set sentAt if transitioning to sent/delivered and not already set
+    const shouldSetSentAt =
+      (args.status === "sent" || args.status === "delivered") && !log.sentAt;
 
     // Update the delivery log
     await ctx.db.patch(log._id, {
       status: args.status,
       error: args.error,
-      sentAt: args.status === "sent" || args.status === "delivered" ? Date.now() : undefined,
+      ...(shouldSetSentAt ? { sentAt: Date.now() } : {}),
       metadata: {
         ...(log.metadata as object),
         webhookData: args.webhookData,

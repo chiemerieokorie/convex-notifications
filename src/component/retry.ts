@@ -20,6 +20,7 @@ const BACKOFF_MULTIPLIER = 2;
 
 /**
  * Calculate next retry delay using exponential backoff.
+ * Note: No jitter is added to keep mutations deterministic.
  */
 function calculateBackoffDelay(
   attempt: number,
@@ -27,9 +28,7 @@ function calculateBackoffDelay(
   maxDelayMs: number = DEFAULT_MAX_DELAY_MS,
 ): number {
   const delay = initialDelayMs * Math.pow(BACKOFF_MULTIPLIER, attempt - 1);
-  // Add jitter (±10%)
-  const jitter = delay * 0.1 * (Math.random() * 2 - 1);
-  return Math.min(delay + jitter, maxDelayMs);
+  return Math.min(delay, maxDelayMs);
 }
 
 /**
@@ -50,19 +49,16 @@ export const queueRetry = internalMutation({
     const maxAttempts = args.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
     const initialDelay = args.initialDelayMs ?? DEFAULT_INITIAL_DELAY_MS;
 
-    // Check if already queued
+    // Check if already queued using compound index
     const existing = await ctx.db
       .query("retryQueue")
-      .withIndex("by_notificationId", (q) =>
-        q.eq("notificationId", args.notificationId),
+      .withIndex("by_notificationId_channel", (q) =>
+        q.eq("notificationId", args.notificationId).eq("channel", args.channel),
       )
       .filter((q) =>
-        q.and(
-          q.eq(q.field("channel"), args.channel),
-          q.or(
-            q.eq(q.field("status"), "pending"),
-            q.eq(q.field("status"), "processing"),
-          ),
+        q.or(
+          q.eq(q.field("status"), "pending"),
+          q.eq(q.field("status"), "processing"),
         ),
       )
       .first();

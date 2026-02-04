@@ -153,10 +153,6 @@ export const processFallbacks = internalMutation({
         triggeredAt: now,
       });
       triggered++;
-
-      console.log(
-        `[fallback] Triggered ${fallback.fromChannel} → ${fallback.toChannel} for notification ${fallback.notificationId}`,
-      );
     }
 
     return {

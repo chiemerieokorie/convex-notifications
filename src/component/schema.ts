@@ -48,9 +48,12 @@ export default defineSchema({
     error: v.optional(v.string()),
     sentAt: v.optional(v.number()),
     metadata: v.optional(v.any()),
+    // External ID from delivery provider (e.g., Resend email ID, Twilio message SID)
+    externalId: v.optional(v.string()),
   })
     .index("by_notificationId", ["notificationId"])
-    .index("by_status", ["status"]),
+    .index("by_status", ["status"])
+    .index("by_externalId", ["externalId"]),
 
   pushTokens: defineTable({
     userId: v.string(),
@@ -112,7 +115,8 @@ export default defineSchema({
     rendered: v.any(),
   })
     .index("by_status_nextRetryAt", ["status", "nextRetryAt"])
-    .index("by_notificationId", ["notificationId"]),
+    .index("by_notificationId", ["notificationId"])
+    .index("by_notificationId_channel", ["notificationId", "channel"]),
 
   /**
    * Channel fallback queue.

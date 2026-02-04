@@ -163,10 +163,6 @@ export const processScheduledNotifications = internalMutation({
         });
 
         succeeded++;
-
-        console.log(
-          `[scheduled] Notification ${notificationId} created for scheduled ${scheduled._id}`,
-        );
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : String(error);
@@ -178,10 +174,6 @@ export const processScheduledNotifications = internalMutation({
         });
 
         failed++;
-        console.error(
-          `[scheduled] Failed to process ${scheduled._id}:`,
-          error,
-        );
       }
     }
 
@@ -227,10 +219,6 @@ export const processRetryQueue = internalMutation({
       // Mark as processing
       await ctx.db.patch(retry._id, { status: "processing" });
       readyForRetry.push(retry._id);
-
-      console.log(
-        `[retry] Retry ${retry._id} ready for attempt ${retry.attempt}/${retry.maxAttempts}`,
-      );
     }
 
     return {
