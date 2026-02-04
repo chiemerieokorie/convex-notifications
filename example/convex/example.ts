@@ -169,53 +169,36 @@ const welcomeDef: NotificationDefinition<{ userName: string }> = {
   },
 };
 
-// --- Exported API ---
+// --- Exported API (using the new api() method for plug-and-play exports) ---
 
-export const list = query({
+export const {
+  list,
+  unreadCount,
+  markRead,
+  markAllRead,
+  archive,
+  getPreferences,
+  updatePreference,
+} = notifications.api();
+
+// Push token management
+export const registerPushToken = mutation({
   args: {
-    limit: v.optional(v.number()),
-    cursor: v.optional(v.number()),
+    token: v.string(),
+    platform: v.optional(v.union(v.literal("ios"), v.literal("android"), v.literal("web"))),
+    deviceId: v.optional(v.string()),
   },
-  handler: (ctx, args) => notifications.list(ctx, args),
+  handler: (ctx, args) => notifications.registerPushToken(ctx, args),
 });
 
-export const unreadCount = query({
+export const getPushTokens = query({
   args: {},
-  handler: (ctx) => notifications.unreadCount(ctx),
+  handler: (ctx) => notifications.getPushTokens(ctx),
 });
 
-export const markRead = mutation({
-  args: { notificationId: v.string() },
-  handler: (ctx, args) => notifications.markRead(ctx, args.notificationId),
-});
-
-export const markAllRead = mutation({
-  args: {},
-  handler: (ctx) => notifications.markAllRead(ctx),
-});
-
-export const archive = mutation({
-  args: { notificationId: v.string() },
-  handler: (ctx, args) => notifications.archive(ctx, args.notificationId),
-});
-
-export const getPreferences = query({
-  args: {},
-  handler: (ctx) => notifications.getPreferences(ctx),
-});
-
-export const updatePreference = mutation({
-  args: {
-    level: v.union(
-      v.literal("global"),
-      v.literal("category"),
-      v.literal("event"),
-    ),
-    key: v.optional(v.string()),
-    channel: v.string(),
-    enabled: v.boolean(),
-  },
-  handler: (ctx, args) => notifications.updatePreference(ctx, args),
+export const deletePushToken = mutation({
+  args: { token: v.string() },
+  handler: (ctx, args) => notifications.deletePushToken(ctx, args.token),
 });
 
 // --- Send mutations ---

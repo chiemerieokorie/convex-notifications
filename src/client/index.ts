@@ -1,3 +1,11 @@
+import type {
+  Auth,
+  FunctionReference,
+  FunctionArgs,
+  FunctionReturnType,
+} from "convex/server";
+import { queryGeneric, mutationGeneric } from "convex/server";
+import { v } from "convex/values";
 import type { ComponentApi } from "../component/_generated/component.js";
 import type {
   NotificationsOptions,
@@ -137,19 +145,44 @@ export class Notifications {
 
   /**
    * Register a push notification token for a user.
-   * This delegates to the expo-push-notifications component.
+   * Uses the component's internal push token storage.
    */
   async registerPushToken(
     ctx: RunMutationCtx,
-    args: { userId: string; pushToken: string },
+    args: {
+      token: string;
+      platform?: "ios" | "android" | "web";
+      deviceId?: string;
+    },
   ) {
-    const pushClient = this.options.clients?.push;
-    if (!pushClient) {
-      throw new Error(
-        "Push notifications client not configured. Pass clients.push to Notifications constructor.",
-      );
-    }
-    return await pushClient.recordToken(ctx, args);
+    const userId = await this.options.auth(ctx);
+    return await ctx.runMutation(this.component.pushTokens.registerPushToken, {
+      userId,
+      token: args.token,
+      platform: args.platform,
+      deviceId: args.deviceId,
+    });
+  }
+
+  /**
+   * Get all push tokens for the current user.
+   */
+  async getPushTokens(ctx: RunQueryCtx) {
+    const userId = await this.options.auth(ctx);
+    return await ctx.runQuery(this.component.pushTokens.getPushTokens, {
+      userId,
+    });
+  }
+
+  /**
+   * Delete a push token.
+   */
+  async deletePushToken(ctx: RunMutationCtx, token: string) {
+    const userId = await this.options.auth(ctx);
+    return await ctx.runMutation(this.component.pushTokens.deletePushToken, {
+      userId,
+      token,
+    });
   }
 
   /**
@@ -287,12 +320,15 @@ export class Notifications {
           };
         }
 
+        // Support async html rendering (e.g., React Email)
+        const html = emailTemplate.html ? await emailTemplate.html(data) : undefined;
+
         const renderedEmail: RenderedEmail = {
           from: emailTemplate.from ?? emailConfig?.defaultFrom ?? "",
           to: toEmail,
           subject: emailTemplate.subject(data),
           body: emailTemplate.body(data),
-          html: emailTemplate.html?.(data),
+          html,
         };
 
         rendered = renderedEmail;
@@ -508,6 +544,110 @@ export class Notifications {
     return await ctx.runQuery(this.component.delivery.getDeliveryLogs, {
       notificationId,
     });
+  }
+
+  /**
+   * Returns pre-built query and mutation functions for direct export.
+   *
+   * Usage:
+   * ```ts
+   * export const { list, unreadCount, markRead, markAllRead, archive, getPreferences, updatePreference } = notifications.api();
+   * ```
+   */
+  api() {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const self = this;
+
+    return {
+      /**
+       * List notifications for the current user (paginated)
+       */
+      list: queryGeneric({
+        args: {
+          limit: v.optional(v.number()),
+          cursor: v.optional(v.number()),
+        },
+        returns: v.object({
+          notifications: v.array(v.any()),
+          cursor: v.union(v.number(), v.null()),
+        }),
+        handler: (ctx: RunQueryCtx, args: { limit?: number; cursor?: number }) =>
+          self.list(ctx, args),
+      }),
+
+      /**
+       * Get unread notification count for the current user
+       */
+      unreadCount: queryGeneric({
+        args: {},
+        returns: v.number(),
+        handler: (ctx: RunQueryCtx) => self.unreadCount(ctx),
+      }),
+
+      /**
+       * Mark a notification as read
+       */
+      markRead: mutationGeneric({
+        args: { notificationId: v.string() },
+        returns: v.null(),
+        handler: (ctx: RunMutationCtx, args: { notificationId: string }) =>
+          self.markRead(ctx, args.notificationId),
+      }),
+
+      /**
+       * Mark all notifications as read for the current user
+       */
+      markAllRead: mutationGeneric({
+        args: {},
+        returns: v.null(),
+        handler: (ctx: RunMutationCtx) => self.markAllRead(ctx),
+      }),
+
+      /**
+       * Archive a notification
+       */
+      archive: mutationGeneric({
+        args: { notificationId: v.string() },
+        returns: v.null(),
+        handler: (ctx: RunMutationCtx, args: { notificationId: string }) =>
+          self.archive(ctx, args.notificationId),
+      }),
+
+      /**
+       * Get notification preferences for the current user
+       */
+      getPreferences: queryGeneric({
+        args: {},
+        returns: v.array(v.any()),
+        handler: (ctx: RunQueryCtx) => self.getPreferences(ctx),
+      }),
+
+      /**
+       * Update a notification preference
+       */
+      updatePreference: mutationGeneric({
+        args: {
+          level: v.union(
+            v.literal("global"),
+            v.literal("category"),
+            v.literal("event"),
+          ),
+          key: v.optional(v.string()),
+          channel: v.string(),
+          enabled: v.boolean(),
+        },
+        returns: v.string(),
+        handler: (
+          ctx: RunMutationCtx,
+          args: {
+            level: "global" | "category" | "event";
+            key?: string;
+            channel: string;
+            enabled: boolean;
+          },
+        ) => self.updatePreference(ctx, args),
+      }),
+    };
   }
 }
 

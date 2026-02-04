@@ -28,7 +28,7 @@ const notifications = new Notifications(components.notifications, {
 **Decision**: Add an `api()` method that returns pre-built `queryGeneric` / `mutationGeneric` functions, so users can do:
 
 ```ts
-export const { list, unreadCount, markRead, markAllRead, archive } = notifications.api();
+export const { list, unreadCount, markRead, markAllRead, archive, getPreferences, updatePreference } = notifications.api();
 ```
 
 **Why**: Without this, users had to write 40+ lines of boilerplate wrapping each method in `queryGeneric`/`mutationGeneric` with args schemas. This was bad DX and error-prone.
@@ -36,6 +36,8 @@ export const { list, unreadCount, markRead, markAllRead, archive } = notificatio
 **References**:
 - [convex-helpers RateLimiter](https://github.com/get-convex/convex-helpers/blob/main/packages/convex-helpers/server/rateLimit.ts) — similar pattern with hook API exports
 - [better-auth](https://github.com/better-auth/better-auth) — `auth.api` pattern for pre-built endpoints
+
+**Status**: Implemented. The `api()` method returns 7 pre-built functions with proper args/returns validators.
 
 ## 3. Constructor-level auth (not per-query custom functions)
 
