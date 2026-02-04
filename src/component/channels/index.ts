@@ -1,35 +1,33 @@
 /**
- * Channel adapters for notification delivery.
+ * Channel utilities for notification delivery.
  *
- * This module provides adapters for different notification channels:
- * - Email (via Resend)
- * - Push (via Expo Push Notification Service)
- * - SMS (via Twilio)
+ * This module provides:
+ * - Type definitions for rendered channel content
+ * - Input validators for email, phone, and push tokens
  *
- * The inbox channel is handled separately through the notifications table.
+ * The actual channel dispatch is handled by the client adapters
+ * which integrate with child components (Resend, Expo Push, Twilio).
  *
  * Usage:
  * ```ts
- * import { createDispatcher } from "./channels/index.js";
+ * import {
+ *   isValidEmail,
+ *   isValidPhoneNumber,
+ *   isValidPushToken,
+ *   validateSmsBody,
+ * } from "convex-notifications/channels";
  *
- * const dispatcher = createDispatcher({
- *   email: { from: "notifications@example.com" },
- *   push: { accessToken: "..." },
- *   sms: { from: "+15551234567" },
- * });
- *
- * const result = await dispatcher.dispatch("email", "user@example.com", {
- *   subject: "Hello",
- *   body: "Welcome to our app!",
- * });
+ * // Validate inputs before dispatch
+ * if (!isValidEmail(email)) {
+ *   throw new Error("Invalid email address");
+ * }
  * ```
  */
 
 // Types
 export type {
   ChannelName,
-  ChannelConfig,
-  ChannelAdapter,
+  ChannelContent,
   DeliveryStatus,
   DispatchResult,
   RenderedEmail,
@@ -38,15 +36,11 @@ export type {
   RenderedContent,
 } from "./types.js";
 
-// Adapters
-export { EmailAdapter, createEmailAdapter } from "./email.js";
-export { PushAdapter, createPushAdapter } from "./push.js";
-export { SmsAdapter, createSmsAdapter } from "./sms.js";
-
-// Dispatcher
-export type { ChannelContent } from "./dispatcher.js";
+// Validators
 export {
-  ChannelDispatcher,
-  createDispatcher,
-  getDefaultDispatcher,
-} from "./dispatcher.js";
+  isValidEmail,
+  isValidPhoneNumber,
+  isValidPushToken,
+  validateSmsBody,
+  formatPhoneE164,
+} from "./validators.js";

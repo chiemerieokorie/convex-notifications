@@ -49,3 +49,40 @@ export const recordDeduplication = internalMutation({
     });
   },
 });
+
+/**
+ * Clean up expired deduplication keys.
+ * This is called by a cron job to prevent the table from growing indefinitely.
+ */
+export const cleanupExpiredDeduplication = internalMutation({
+  args: {
+    batchSize: v.optional(v.number()),
+  },
+  returns: v.object({
+    deleted: v.number(),
+    hasMore: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    const batchSize = args.batchSize ?? 500;
+    const now = Date.now();
+
+    // Query expired entries using the expiresAt index
+    const expired = await ctx.db
+      .query("deduplication")
+      .withIndex("by_expiresAt", (q) => q.lt("expiresAt", now))
+      .take(batchSize + 1);
+
+    const hasMore = expired.length > batchSize;
+    const toDelete = expired.slice(0, batchSize);
+
+    // Delete in batch
+    for (const entry of toDelete) {
+      await ctx.db.delete(entry._id);
+    }
+
+    return {
+      deleted: toDelete.length,
+      hasMore,
+    };
+  },
+});

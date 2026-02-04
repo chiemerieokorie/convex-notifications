@@ -60,4 +60,57 @@ export default defineSchema({
   })
     .index("by_userId", ["userId"])
     .index("by_token", ["token"]),
+
+  /**
+   * Scheduled notifications waiting to be sent.
+   * Processed by a cron job that dispatches them when scheduledFor time is reached.
+   */
+  scheduledNotifications: defineTable({
+    userId: v.string(),
+    event: v.string(),
+    category: v.optional(v.string()),
+    title: v.string(),
+    body: v.string(),
+    data: v.optional(v.any()),
+    channels: v.any(), // Channel templates
+    scheduledFor: v.number(), // Timestamp when to send
+    transactional: v.optional(v.boolean()),
+    deduplicationKey: v.optional(v.string()),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("processing"),
+      v.literal("sent"),
+      v.literal("failed"),
+      v.literal("cancelled"),
+    ),
+    error: v.optional(v.string()),
+    processedAt: v.optional(v.number()),
+  })
+    .index("by_status_scheduledFor", ["status", "scheduledFor"])
+    .index("by_userId", ["userId"])
+    .index("by_userId_status", ["userId", "status"]),
+
+  /**
+   * Retry queue for failed deliveries.
+   * Used by the workflow component to retry failed channel dispatches.
+   */
+  retryQueue: defineTable({
+    notificationId: v.id("notifications"),
+    deliveryLogId: v.id("deliveryLog"),
+    channel: v.string(),
+    attempt: v.number(),
+    maxAttempts: v.number(),
+    nextRetryAt: v.number(),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("processing"),
+      v.literal("succeeded"),
+      v.literal("exhausted"),
+    ),
+    lastError: v.optional(v.string()),
+    // Rendered content to retry
+    rendered: v.any(),
+  })
+    .index("by_status_nextRetryAt", ["status", "nextRetryAt"])
+    .index("by_notificationId", ["notificationId"]),
 });

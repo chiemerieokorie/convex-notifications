@@ -48,6 +48,51 @@ export type {
 } from "./types.js";
 
 /**
+ * Create a typed notification definition.
+ *
+ * This helper function provides runtime validation and type inference
+ * for notification definitions.
+ *
+ * @example
+ * ```ts
+ * const welcomeNotification = createNotification({
+ *   event: "user.welcome",
+ *   dataValidator: v.object({ userName: v.string() }),
+ *   category: "onboarding",
+ *   channels: {
+ *     inbox: {
+ *       title: (data) => `Welcome, ${data.userName}!`,
+ *       body: () => "Thanks for joining.",
+ *     },
+ *     email: {
+ *       subject: (data) => `Welcome, ${data.userName}!`,
+ *       body: (data) => `Hi ${data.userName}, welcome aboard!`,
+ *     },
+ *   },
+ * });
+ * ```
+ */
+export function createNotification<T>(
+  definition: NotificationDefinition<T>,
+): NotificationDefinition<T> {
+  // Validate required fields
+  if (!definition.event || definition.event.trim() === "") {
+    throw new Error("Notification definition must have a non-empty 'event' name");
+  }
+
+  if (!definition.channels || Object.keys(definition.channels).length === 0) {
+    throw new Error("Notification definition must have at least one channel template");
+  }
+
+  // Validate that at least inbox is defined (required for all notifications)
+  if (!definition.channels.inbox) {
+    throw new Error("Notification definition must include an 'inbox' channel template");
+  }
+
+  return definition;
+}
+
+/**
  * Extended options that include child component clients for delivery.
  */
 export type NotificationsWithChannelsOptions = NotificationsOptions & {
@@ -183,6 +228,95 @@ export class Notifications {
       userId,
       token,
     });
+  }
+
+  /**
+   * Schedule a notification for future delivery.
+   *
+   * @returns The scheduled notification ID
+   */
+  async schedule<T>(
+    ctx: RunMutationCtx,
+    definition: NotificationDefinition<T>,
+    args: {
+      userId: string;
+      data: T;
+      scheduledFor: number | Date;
+      transactional?: boolean;
+      deduplicationKey?: string;
+    },
+  ): Promise<{ scheduledNotificationId: string }> {
+    const data = args.data;
+    const scheduledFor =
+      args.scheduledFor instanceof Date
+        ? args.scheduledFor.getTime()
+        : args.scheduledFor;
+
+    // Validate scheduledFor is in the future
+    if (scheduledFor <= Date.now()) {
+      throw new Error("scheduledFor must be in the future");
+    }
+
+    // Render inbox template for storage
+    const inboxTemplate = definition.channels.inbox;
+    const title = inboxTemplate
+      ? inboxTemplate.title(data)
+      : definition.event;
+    const body = inboxTemplate ? inboxTemplate.body(data) : "";
+
+    const scheduledNotificationId = await ctx.runMutation(
+      this.component.scheduled.scheduleNotification,
+      {
+        userId: args.userId,
+        event: definition.event,
+        category: definition.category,
+        title,
+        body,
+        data: args.data as unknown,
+        channels: definition.channels,
+        scheduledFor,
+        transactional: args.transactional,
+        deduplicationKey: args.deduplicationKey,
+      },
+    );
+
+    return { scheduledNotificationId };
+  }
+
+  /**
+   * Cancel a scheduled notification.
+   *
+   * @returns true if cancelled, false if not found or already processed
+   */
+  async cancelScheduled(
+    ctx: RunMutationCtx,
+    scheduledNotificationId: string,
+  ): Promise<boolean> {
+    const userId = await this.options.auth(ctx);
+    return await ctx.runMutation(
+      this.component.scheduled.cancelScheduledNotification,
+      {
+        id: scheduledNotificationId as any,
+        userId,
+      },
+    );
+  }
+
+  /**
+   * Get scheduled notifications for the current user.
+   */
+  async getScheduledNotifications(
+    ctx: RunQueryCtx,
+    opts?: { status?: "pending" | "processing" | "sent" | "failed" | "cancelled" },
+  ) {
+    const userId = await this.options.auth(ctx);
+    return await ctx.runQuery(
+      this.component.scheduled.getScheduledNotifications,
+      {
+        userId,
+        status: opts?.status,
+      },
+    );
   }
 
   /**
@@ -646,6 +780,57 @@ export class Notifications {
             enabled: boolean;
           },
         ) => self.updatePreference(ctx, args),
+      }),
+
+      /**
+       * Register a push notification token for the current user
+       */
+      registerPushToken: mutationGeneric({
+        args: {
+          token: v.string(),
+          platform: v.optional(
+            v.union(v.literal("ios"), v.literal("android"), v.literal("web")),
+          ),
+          deviceId: v.optional(v.string()),
+        },
+        returns: v.string(),
+        handler: (
+          ctx: RunMutationCtx,
+          args: {
+            token: string;
+            platform?: "ios" | "android" | "web";
+            deviceId?: string;
+          },
+        ) => self.registerPushToken(ctx, args),
+      }),
+
+      /**
+       * Get all push tokens for the current user
+       */
+      getPushTokens: queryGeneric({
+        args: {},
+        returns: v.array(v.any()),
+        handler: (ctx: RunQueryCtx) => self.getPushTokens(ctx),
+      }),
+
+      /**
+       * Delete a push token for the current user
+       */
+      deletePushToken: mutationGeneric({
+        args: { token: v.string() },
+        returns: v.null(),
+        handler: (ctx: RunMutationCtx, args: { token: string }) =>
+          self.deletePushToken(ctx, args.token),
+      }),
+
+      /**
+       * Get delivery logs for a notification
+       */
+      getDeliveryLogs: queryGeneric({
+        args: { notificationId: v.string() },
+        returns: v.array(v.any()),
+        handler: (ctx: RunQueryCtx, args: { notificationId: string }) =>
+          self.getDeliveryLogs(ctx, args.notificationId),
       }),
     };
   }

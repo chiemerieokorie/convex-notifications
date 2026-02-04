@@ -1,7 +1,7 @@
 import { components } from "./_generated/api.js";
 import { query, mutation } from "./_generated/server.js";
-import { Notifications } from "convex-notifications";
-import type { NotificationDefinition, RunMutationCtx } from "convex-notifications";
+import { Notifications, createNotification } from "convex-notifications";
+import type { RunMutationCtx } from "convex-notifications";
 import { v } from "convex/values";
 import type { Auth } from "convex/server";
 
@@ -118,12 +118,12 @@ const notifications = new Notifications(components.notifications, {
   // },
 });
 
-// --- Notification Definitions ---
+// --- Notification Definitions (using createNotification helper) ---
 
-const commentReplyDef: NotificationDefinition<{
-  commenterName: string;
-  postTitle: string;
-}> = {
+/**
+ * Comment reply notification - sent when someone replies to a user's comment.
+ */
+const commentReplyNotification = createNotification({
   event: "comment.reply",
   dataValidator: v.object({
     commenterName: v.string(),
@@ -143,15 +143,18 @@ const commentReplyDef: NotificationDefinition<{
         `<p><strong>${data.commenterName}</strong> replied on "${data.postTitle}".</p>`,
     },
     push: {
-      title: (_data) => "New reply",
+      title: () => "New reply",
       body: (data) =>
         `${data.commenterName} replied on "${data.postTitle}"`,
       data: (data) => ({ event: "comment.reply", postTitle: data.postTitle }),
     },
   },
-};
+});
 
-const welcomeDef: NotificationDefinition<{ userName: string }> = {
+/**
+ * Welcome notification - sent when a new user signs up.
+ */
+const welcomeNotification = createNotification({
   event: "user.welcome",
   dataValidator: v.object({ userName: v.string() }),
   category: "onboarding",
@@ -167,7 +170,29 @@ const welcomeDef: NotificationDefinition<{ userName: string }> = {
         `<h1>Welcome, ${data.userName}!</h1><p>Thanks for joining. Here's how to get started.</p>`,
     },
   },
-};
+});
+
+/**
+ * Reminder notification - example of a scheduled notification.
+ */
+const reminderNotification = createNotification({
+  event: "reminder",
+  dataValidator: v.object({
+    title: v.string(),
+    message: v.string(),
+  }),
+  category: "reminders",
+  channels: {
+    inbox: {
+      title: (data) => data.title,
+      body: (data) => data.message,
+    },
+    push: {
+      title: (data) => data.title,
+      body: (data) => data.message,
+    },
+  },
+});
 
 // --- Exported API (using the new api() method for plug-and-play exports) ---
 
@@ -179,27 +204,11 @@ export const {
   archive,
   getPreferences,
   updatePreference,
+  registerPushToken,
+  getPushTokens,
+  deletePushToken,
+  getDeliveryLogs,
 } = notifications.api();
-
-// Push token management
-export const registerPushToken = mutation({
-  args: {
-    token: v.string(),
-    platform: v.optional(v.union(v.literal("ios"), v.literal("android"), v.literal("web"))),
-    deviceId: v.optional(v.string()),
-  },
-  handler: (ctx, args) => notifications.registerPushToken(ctx, args),
-});
-
-export const getPushTokens = query({
-  args: {},
-  handler: (ctx) => notifications.getPushTokens(ctx),
-});
-
-export const deletePushToken = mutation({
-  args: { token: v.string() },
-  handler: (ctx, args) => notifications.deletePushToken(ctx, args.token),
-});
 
 // --- Send mutations ---
 
@@ -210,7 +219,7 @@ export const sendTestNotification = mutation({
   },
   handler: async (ctx, args) => {
     const userId = args.userId ?? (await getAuthUserId(ctx));
-    return notifications.send(ctx, welcomeDef, { userId, data: args.data });
+    return notifications.send(ctx, welcomeNotification, { userId, data: args.data });
   },
 });
 
@@ -224,19 +233,137 @@ export const sendCommentReply = mutation({
   },
   handler: async (ctx, args) => {
     const userId = args.userId ?? (await getAuthUserId(ctx));
-    return notifications.send(ctx, commentReplyDef, {
+    return notifications.send(ctx, commentReplyNotification, {
       userId,
       data: args.data,
     });
   },
 });
 
-// --- Delivery Status ---
+// --- Scheduled Notifications ---
 
-export const getDeliveryLogs = query({
+/**
+ * Schedule a reminder notification for the future.
+ */
+export const scheduleReminder = mutation({
   args: {
-    notificationId: v.string(),
+    userId: v.optional(v.string()),
+    data: v.object({
+      title: v.string(),
+      message: v.string(),
+    }),
+    scheduledFor: v.number(), // Unix timestamp in milliseconds
   },
-  handler: (ctx, args) =>
-    notifications.getDeliveryLogs(ctx, args.notificationId),
+  handler: async (ctx, args) => {
+    const userId = args.userId ?? (await getAuthUserId(ctx));
+    return notifications.schedule(ctx, reminderNotification, {
+      userId,
+      data: args.data,
+      scheduledFor: args.scheduledFor,
+    });
+  },
+});
+
+/**
+ * Cancel a scheduled notification.
+ */
+export const cancelScheduledNotification = mutation({
+  args: {
+    scheduledNotificationId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return notifications.cancelScheduled(ctx, args.scheduledNotificationId);
+  },
+});
+
+/**
+ * Get scheduled notifications for the current user.
+ */
+export const getScheduledNotifications = query({
+  args: {
+    status: v.optional(
+      v.union(
+        v.literal("pending"),
+        v.literal("processing"),
+        v.literal("sent"),
+        v.literal("failed"),
+        v.literal("cancelled"),
+      ),
+    ),
+  },
+  handler: async (ctx, args) => {
+    return notifications.getScheduledNotifications(ctx, {
+      status: args.status,
+    });
+  },
+});
+
+// --- Transactional Notifications ---
+
+/**
+ * Send a transactional notification (bypasses user preferences).
+ * Use for security alerts, password resets, etc.
+ */
+export const sendSecurityAlert = mutation({
+  args: {
+    userId: v.optional(v.string()),
+    data: v.object({
+      alertType: v.string(),
+      details: v.string(),
+    }),
+  },
+  handler: async (ctx, args) => {
+    const userId = args.userId ?? (await getAuthUserId(ctx));
+
+    // Create a transactional security alert
+    const securityAlert = createNotification({
+      event: "security.alert",
+      dataValidator: v.object({
+        alertType: v.string(),
+        details: v.string(),
+      }),
+      category: "security",
+      channels: {
+        inbox: {
+          title: (data) => `Security Alert: ${data.alertType}`,
+          body: (data) => data.details,
+        },
+        email: {
+          subject: (data) => `[Security Alert] ${data.alertType}`,
+          body: (data) => `A security event has occurred: ${data.details}`,
+        },
+      },
+    });
+
+    return notifications.send(ctx, securityAlert, {
+      userId,
+      data: args.data,
+      transactional: true, // Bypasses user preferences
+    });
+  },
+});
+
+// --- Deduplication Example ---
+
+/**
+ * Send a notification with deduplication to prevent spam.
+ */
+export const sendWithDeduplication = mutation({
+  args: {
+    userId: v.optional(v.string()),
+    data: v.object({
+      commenterName: v.string(),
+      postTitle: v.string(),
+    }),
+    deduplicationKey: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const userId = args.userId ?? (await getAuthUserId(ctx));
+    return notifications.send(ctx, commentReplyNotification, {
+      userId,
+      data: args.data,
+      deduplicationKey: args.deduplicationKey,
+      deduplicationTtlSeconds: 3600, // 1 hour
+    });
+  },
 });
