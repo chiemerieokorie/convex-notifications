@@ -1,3 +1,10 @@
+## [1.4.0](https://github.com/chiemerieokorie/convex-notifications/compare/v1.3.0...v1.4.0) (2026-02-04)
+
+### Features
+
+* **channels:** add channel adapter infrastructure ([6d867b3](https://github.com/chiemerieokorie/convex-notifications/commit/6d867b3f682e93e1a4d84ab57430e2a44effe922))
+* **channels:** integrate child components for dispatch ([97fd312](https://github.com/chiemerieokorie/convex-notifications/commit/97fd312a45803585aa00ee067c3a0d8a7d1776f7))
+
 ## [1.3.0](https://github.com/chiemerieokorie/convex-notifications/compare/v1.2.1...v1.3.0) (2026-02-04)
 
 ### Features
