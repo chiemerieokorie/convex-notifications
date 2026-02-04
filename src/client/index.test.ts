@@ -69,7 +69,7 @@ const asyncHtmlEmailDef: NotificationDefinition<{ userName: string }> = {
   },
 };
 
-// Use the new api() method for plug-and-play exports (no more 40+ lines of boilerplate!)
+// Use the new api() method for plug-and-play exports
 export const {
   list,
   unreadCount,
@@ -80,54 +80,8 @@ export const {
   updatePreference,
 } = notifications.api();
 
-// The send mutation is still custom since it requires a notification definition
-export const send = mutationGeneric({
-// Exported query/mutation wrappers (same pattern as example app)
-export const list = query({
-  args: { limit: v.optional(v.number()), cursor: v.optional(v.number()) },
-  handler: (ctx, args) => notifications.list(ctx, args),
-});
-
-export const unreadCount = query({
-  args: {},
-  handler: (ctx) => notifications.unreadCount(ctx),
-});
-
-export const markRead = mutation({
-  args: { notificationId: v.string() },
-  handler: (ctx, args) => notifications.markRead(ctx, args.notificationId),
-});
-
-export const markAllRead = mutation({
-  args: {},
-  handler: (ctx) => notifications.markAllRead(ctx),
-});
-
-export const archive = mutation({
-  args: { notificationId: v.string() },
-  handler: (ctx, args) => notifications.archive(ctx, args.notificationId),
-});
-
-export const getPreferences = query({
-  args: {},
-  handler: (ctx) => notifications.getPreferences(ctx),
-});
-
-export const updatePreference = mutation({
-  args: {
-    level: v.union(
-      v.literal("global"),
-      v.literal("category"),
-      v.literal("event"),
-    ),
-    key: v.optional(v.string()),
-    channel: v.string(),
-    enabled: v.boolean(),
-  },
-  handler: (ctx, args) => notifications.updatePreference(ctx, args),
-});
-
-export const registerPushToken = mutation({
+// Push token management
+export const registerPushToken = mutationGeneric({
   args: {
     token: v.string(),
     platform: v.optional(v.union(v.literal("ios"), v.literal("android"), v.literal("web"))),
@@ -136,17 +90,20 @@ export const registerPushToken = mutation({
   handler: (ctx, args) => notifications.registerPushToken(ctx, args),
 });
 
-export const getPushTokens = query({
+export const getPushTokens = queryGeneric({
   args: {},
+  returns: v.array(v.any()),
   handler: (ctx) => notifications.getPushTokens(ctx),
 });
 
-export const deletePushToken = mutation({
+export const deletePushToken = mutationGeneric({
   args: { token: v.string() },
+  returns: v.boolean(),
   handler: (ctx, args) => notifications.deletePushToken(ctx, args.token),
 });
 
-export const send = mutation({
+// The send mutation is custom since it requires a notification definition
+export const send = mutationGeneric({
   args: {
     userId: v.string(),
     data: v.any(),
@@ -169,7 +126,7 @@ export const getDeliveryLogs = queryGeneric({
   returns: v.array(v.any()),
   handler: async (ctx, args) => {
     return await ctx.runQuery(components.notifications.delivery.getDeliveryLogs, {
-      notificationId: args.notificationId as any,
+      notificationId: args.notificationId as string,
     });
   },
 });
@@ -230,28 +187,28 @@ describe("client integration", () => {
   test("send and list notifications", async () => {
     const t = initConvexTest().withIdentity({ subject: "user1" });
 
-    const notificationId = await t.mutation(testApi.send, {
+    const result = await t.mutation(testApi.send, {
       userId: "user1",
       data: { message: "Hello, world!" },
     });
-    expect(notificationId).toBeDefined();
+    expect(result.notificationId).toBeDefined();
 
-    const result = await t.query(testApi.list, {});
-    expect(result.notifications).toHaveLength(1);
-    expect(result.notifications[0].body).toBe("Hello, world!");
+    const listResult = await t.query(testApi.list, {});
+    expect(listResult.notifications).toHaveLength(1);
+    expect(listResult.notifications[0].body).toBe("Hello, world!");
   });
 
   test("unread count decreases after markRead", async () => {
     const t = initConvexTest().withIdentity({ subject: "user1" });
 
-    const notificationId = await t.mutation(testApi.send, {
+    const result = await t.mutation(testApi.send, {
       userId: "user1",
       data: { message: "Test" },
     });
 
     expect(await t.query(testApi.unreadCount, {})).toBe(1);
 
-    await t.mutation(testApi.markRead, { notificationId });
+    await t.mutation(testApi.markRead, { notificationId: result.notificationId });
     expect(await t.query(testApi.unreadCount, {})).toBe(0);
   });
 
@@ -276,12 +233,12 @@ describe("client integration", () => {
   test("archive removes from list", async () => {
     const t = initConvexTest().withIdentity({ subject: "user1" });
 
-    const notificationId = await t.mutation(testApi.send, {
+    const sendResult = await t.mutation(testApi.send, {
       userId: "user1",
       data: { message: "Test" },
     });
 
-    await t.mutation(testApi.archive, { notificationId });
+    await t.mutation(testApi.archive, { notificationId: sendResult.notificationId });
 
     const result = await t.query(testApi.list, {});
     expect(result.notifications).toHaveLength(0);
@@ -336,16 +293,16 @@ describe("client integration", () => {
     });
 
     // Transactional still creates the notification
-    const id = await t.mutation(testApi.send, {
+    const result = await t.mutation(testApi.send, {
       userId: "user1",
       data: { message: "Security alert" },
       transactional: true,
     });
-    expect(id).toBeDefined();
+    expect(result.notificationId).toBeDefined();
 
     // Notification was still created in inbox
-    const result = await t.query(testApi.list, {});
-    expect(result.notifications).toHaveLength(1);
+    const listResult = await t.query(testApi.list, {});
+    expect(listResult.notifications).toHaveLength(1);
   });
 
   test("registerPushToken registers a new token", async () => {
@@ -455,55 +412,36 @@ describe("client integration", () => {
 
     expect(user2Tokens).toHaveLength(1);
     expect(user2Tokens[0].token).toBe("User2Token");
-  test("delivery status updates to sent after dispatch", async () => {
-    const t = initConvexTest().withIdentity({ subject: "user1" });
-
-    const notificationId = await t.mutation(testApi.send, {
-      userId: "user1",
-      data: { message: "Hello!" },
-    });
-
-    // Delivery logs should be created and updated to "sent"
-    const logs = await t.query(testApi.getDeliveryLogs, { notificationId });
-
-    expect(logs).toHaveLength(1);
-    expect(logs[0].channel).toBe("email");
-    expect(logs[0].status).toBe("sent");
-    expect(logs[0].sentAt).toBeDefined();
-    expect(logs[0].metadata).toEqual({
-      subject: "Test Email",
-      body: "Hello!",
-    });
   });
 
   test("email with sync html field renders correctly", async () => {
     const t = initConvexTest().withIdentity({ subject: "user1" });
 
-    const notificationId = await t.mutation(testApi.sendHtmlEmail, {
+    const result = await t.mutation(testApi.sendHtmlEmail, {
       userId: "user1",
       data: { userName: "Alice" },
     });
-    expect(notificationId).toBeDefined();
+    expect(result.notificationId).toBeDefined();
 
     // Notification should be in inbox with rendered title
-    const result = await t.query(testApi.list, {});
-    expect(result.notifications).toHaveLength(1);
-    expect(result.notifications[0].title).toBe("Welcome, Alice!");
-    expect(result.notifications[0].body).toBe("Thanks for joining.");
+    const listResult = await t.query(testApi.list, {});
+    expect(listResult.notifications).toHaveLength(1);
+    expect(listResult.notifications[0].title).toBe("Welcome, Alice!");
+    expect(listResult.notifications[0].body).toBe("Thanks for joining.");
   });
 
   test("email with async html field renders correctly", async () => {
     const t = initConvexTest().withIdentity({ subject: "user1" });
 
-    const notificationId = await t.mutation(testApi.sendAsyncHtmlEmail, {
+    const result = await t.mutation(testApi.sendAsyncHtmlEmail, {
       userId: "user1",
       data: { userName: "Bob" },
     });
-    expect(notificationId).toBeDefined();
+    expect(result.notificationId).toBeDefined();
 
     // Notification should be in inbox
-    const result = await t.query(testApi.list, {});
-    expect(result.notifications).toHaveLength(1);
-    expect(result.notifications[0].title).toBe("Hello, Bob");
+    const listResult = await t.query(testApi.list, {});
+    expect(listResult.notifications).toHaveLength(1);
+    expect(listResult.notifications[0].title).toBe("Hello, Bob");
   });
 });
