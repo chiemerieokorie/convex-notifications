@@ -114,6 +114,25 @@ export const updatePreference = mutation({
   handler: (ctx, args) => notifications.updatePreference(ctx, args),
 });
 
+export const registerPushToken = mutation({
+  args: {
+    token: v.string(),
+    platform: v.optional(v.union(v.literal("ios"), v.literal("android"), v.literal("web"))),
+    deviceId: v.optional(v.string()),
+  },
+  handler: (ctx, args) => notifications.registerPushToken(ctx, args),
+});
+
+export const getPushTokens = query({
+  args: {},
+  handler: (ctx) => notifications.getPushTokens(ctx),
+});
+
+export const deletePushToken = mutation({
+  args: { token: v.string() },
+  handler: (ctx, args) => notifications.deletePushToken(ctx, args.token),
+});
+
 export const send = mutation({
   args: {
     userId: v.string(),
@@ -176,6 +195,9 @@ const testApi = (
       archive: typeof archive;
       getPreferences: typeof getPreferences;
       updatePreference: typeof updatePreference;
+      registerPushToken: typeof registerPushToken;
+      getPushTokens: typeof getPushTokens;
+      deletePushToken: typeof deletePushToken;
       send: typeof send;
       getDeliveryLogs: typeof getDeliveryLogs;
       sendHtmlEmail: typeof sendHtmlEmail;
@@ -313,6 +335,113 @@ describe("client integration", () => {
     expect(result.notifications).toHaveLength(1);
   });
 
+  test("registerPushToken registers a new token", async () => {
+    const t = initConvexTest().withIdentity({ subject: "user1" });
+
+    const tokenId = await t.mutation(testApi.registerPushToken, {
+      token: "ExponentPushToken[abc123]",
+      platform: "ios",
+    });
+    expect(tokenId).toBeDefined();
+
+    const tokens = await t.query(testApi.getPushTokens, {});
+    expect(tokens).toHaveLength(1);
+    expect(tokens[0].token).toBe("ExponentPushToken[abc123]");
+    expect(tokens[0].platform).toBe("ios");
+  });
+
+  test("registerPushToken updates existing token", async () => {
+    const t = initConvexTest().withIdentity({ subject: "user1" });
+
+    // Register first time
+    const tokenId1 = await t.mutation(testApi.registerPushToken, {
+      token: "ExponentPushToken[abc123]",
+      platform: "ios",
+    });
+
+    // Register same token again with different platform
+    const tokenId2 = await t.mutation(testApi.registerPushToken, {
+      token: "ExponentPushToken[abc123]",
+      platform: "android",
+    });
+
+    // Should be same ID (upserted)
+    expect(tokenId2).toBe(tokenId1);
+
+    // Should still only have one token
+    const tokens = await t.query(testApi.getPushTokens, {});
+    expect(tokens).toHaveLength(1);
+    expect(tokens[0].platform).toBe("android");
+  });
+
+  test("registerPushToken with deviceId", async () => {
+    const t = initConvexTest().withIdentity({ subject: "user1" });
+
+    await t.mutation(testApi.registerPushToken, {
+      token: "ExponentPushToken[xyz789]",
+      platform: "ios",
+      deviceId: "device-123",
+    });
+
+    const tokens = await t.query(testApi.getPushTokens, {});
+    expect(tokens).toHaveLength(1);
+    expect(tokens[0].deviceId).toBe("device-123");
+  });
+
+  test("deletePushToken removes token", async () => {
+    const t = initConvexTest().withIdentity({ subject: "user1" });
+
+    await t.mutation(testApi.registerPushToken, {
+      token: "ExponentPushToken[abc123]",
+    });
+
+    const tokensBeforeDelete = await t.query(testApi.getPushTokens, {});
+    expect(tokensBeforeDelete).toHaveLength(1);
+
+    const deleted = await t.mutation(testApi.deletePushToken, {
+      token: "ExponentPushToken[abc123]",
+    });
+    expect(deleted).toBe(true);
+
+    const tokensAfterDelete = await t.query(testApi.getPushTokens, {});
+    expect(tokensAfterDelete).toHaveLength(0);
+  });
+
+  test("deletePushToken returns false for non-existent token", async () => {
+    const t = initConvexTest().withIdentity({ subject: "user1" });
+
+    const deleted = await t.mutation(testApi.deletePushToken, {
+      token: "NonExistentToken",
+    });
+    expect(deleted).toBe(false);
+  });
+
+  test("getPushTokens returns empty array for user with no tokens", async () => {
+    const t = initConvexTest().withIdentity({ subject: "user1" });
+
+    const tokens = await t.query(testApi.getPushTokens, {});
+    expect(tokens).toHaveLength(0);
+  });
+
+  test("push tokens are user-scoped", async () => {
+    const t1 = initConvexTest().withIdentity({ subject: "user1" });
+    const t2 = initConvexTest().withIdentity({ subject: "user2" });
+
+    await t1.mutation(testApi.registerPushToken, {
+      token: "User1Token",
+    });
+    await t2.mutation(testApi.registerPushToken, {
+      token: "User2Token",
+    });
+
+    const user1Tokens = await t1.query(testApi.getPushTokens, {});
+    const user2Tokens = await t2.query(testApi.getPushTokens, {});
+
+    expect(user1Tokens).toHaveLength(1);
+    expect(user1Tokens[0].token).toBe("User1Token");
+
+    expect(user2Tokens).toHaveLength(1);
+    expect(user2Tokens[0].token).toBe("User2Token");
   test("delivery status updates to sent after dispatch", async () => {
     const t = initConvexTest().withIdentity({ subject: "user1" });
 
