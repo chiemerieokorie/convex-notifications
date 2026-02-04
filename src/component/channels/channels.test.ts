@@ -149,11 +149,10 @@ describe("formatPhoneE164", () => {
 });
 
 describe("Channel type exports", () => {
-  test("types are exported", async () => {
-    // Verify that type exports compile correctly
-    const { ChannelName, DeliveryStatus } = await import("./types.js");
-    // Types are compile-time only, so just verify the module loads
-    expect(typeof ChannelName).toBe("undefined"); // Type-only export
-    expect(typeof DeliveryStatus).toBe("undefined"); // Type-only export
+  test("module loads correctly", async () => {
+    // Verify that the types module can be imported
+    const types = await import("./types.js");
+    // Module should load without errors
+    expect(types).toBeDefined();
   });
 });

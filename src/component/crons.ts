@@ -21,7 +21,7 @@ crons.interval(
 crons.interval(
   "process scheduled notifications",
   { minutes: 1 },
-  internal.processor.processScheduledNotifications,
+  internal.notifications.processScheduledNotifications,
   { batchSize: 50 },
 );
 
@@ -32,7 +32,7 @@ crons.interval(
 crons.interval(
   "process retry queue",
   { minutes: 1 },
-  internal.processor.processRetryQueue,
+  internal.notifications.processRetryQueue,
   { batchSize: 50 },
 );
 

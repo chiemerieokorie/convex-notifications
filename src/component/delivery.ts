@@ -56,3 +56,53 @@ export const getDeliveryLogs = internalQuery({
       .collect();
   },
 });
+
+/**
+ * Update delivery log from webhook callback.
+ * Used by Resend and Twilio webhooks to update delivery status.
+ */
+export const updateDeliveryFromWebhook = internalMutation({
+  args: {
+    externalId: v.string(),
+    channel: v.string(),
+    status: statusValidator,
+    error: v.optional(v.string()),
+    webhookData: v.optional(v.any()),
+  },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    // Find delivery log by externalId in metadata
+    const logs = await ctx.db
+      .query("deliveryLog")
+      .withIndex("by_status")
+      .filter((q) => q.eq(q.field("channel"), args.channel))
+      .collect();
+
+    // Find the log with matching externalId
+    const log = logs.find((l) => {
+      const metadata = l.metadata as { externalId?: string } | undefined;
+      return metadata?.externalId === args.externalId;
+    });
+
+    if (!log) {
+      console.log(
+        `[webhook] No delivery log found for externalId: ${args.externalId}`,
+      );
+      return false;
+    }
+
+    // Update the delivery log
+    await ctx.db.patch(log._id, {
+      status: args.status,
+      error: args.error,
+      sentAt: args.status === "sent" || args.status === "delivered" ? Date.now() : undefined,
+      metadata: {
+        ...(log.metadata as object),
+        webhookData: args.webhookData,
+        webhookReceivedAt: Date.now(),
+      },
+    });
+
+    return true;
+  },
+});

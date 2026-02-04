@@ -12,6 +12,8 @@ import type * as delivery from "../delivery.js";
 import type * as inbox from "../inbox.js";
 import type * as notifications from "../notifications.js";
 import type * as preferences from "../preferences.js";
+import type * as pushTokens from "../pushTokens.js";
+import type * as scheduled from "../scheduled.js";
 
 import type {
   ApiFromModules,
@@ -25,6 +27,8 @@ const fullApi: ApiFromModules<{
   inbox: typeof inbox;
   notifications: typeof notifications;
   preferences: typeof preferences;
+  pushTokens: typeof pushTokens;
+  scheduled: typeof scheduled;
 }> = anyApi as any;
 
 /**

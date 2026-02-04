@@ -818,7 +818,7 @@ export class Notifications {
        */
       deletePushToken: mutationGeneric({
         args: { token: v.string() },
-        returns: v.null(),
+        returns: v.boolean(),
         handler: (ctx: RunMutationCtx, args: { token: string }) =>
           self.deletePushToken(ctx, args.token),
       }),

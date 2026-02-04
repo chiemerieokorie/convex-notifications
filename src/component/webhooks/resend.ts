@@ -12,8 +12,7 @@
  * @see https://resend.com/docs/webhooks
  */
 
-import { v } from "convex/values";
-import { httpAction, internalMutation } from "../_generated/server.js";
+import { httpAction } from "../_generated/server.js";
 import { internal } from "../_generated/api.js";
 
 /**
@@ -40,7 +39,6 @@ type ResendWebhookPayload = {
     to: string[];
     subject: string;
     created_at: string;
-    // Additional fields may be present depending on event type
   };
 };
 
@@ -61,7 +59,6 @@ function mapResendEventToStatus(
     case "email.delivery_delayed":
     case "email.opened":
     case "email.clicked":
-      // These don't change our delivery status
       return null;
     default:
       return null;
@@ -81,7 +78,7 @@ function mapResendEventToStatus(
  * ```ts
  * // In your convex/http.ts
  * import { httpRouter } from "convex/server";
- * import { resendWebhook } from "convex-notifications";
+ * import { resendWebhook } from "./webhooks/resend.js";
  *
  * const http = httpRouter();
  * http.route({
@@ -113,62 +110,16 @@ export const resendWebhook = httpAction(async (ctx, request) => {
     return new Response("OK", { status: 200 });
   }
 
-  // Update delivery log
-  await ctx.runMutation(internal.webhooks.resend.updateDeliveryFromWebhook, {
+  // Update delivery log using the shared function in delivery.ts
+  await ctx.runMutation(internal.delivery.updateDeliveryFromWebhook, {
     externalId: payload.data.email_id,
     channel: "email",
     status,
-    eventType: payload.type,
-    eventData: payload.data,
+    webhookData: {
+      eventType: payload.type,
+      ...payload.data,
+    },
   });
 
   return new Response("OK", { status: 200 });
-});
-
-/**
- * Internal mutation to update delivery log from webhook
- */
-export const updateDeliveryFromWebhook = internalMutation({
-  args: {
-    externalId: v.string(),
-    channel: v.string(),
-    status: v.union(v.literal("sent"), v.literal("delivered"), v.literal("failed")),
-    eventType: v.string(),
-    eventData: v.any(),
-  },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    // Find delivery log by externalId in metadata
-    const logs = await ctx.db
-      .query("deliveryLog")
-      .withIndex("by_status")
-      .filter((q) => q.eq(q.field("channel"), args.channel))
-      .collect();
-
-    // Find the log with matching externalId
-    const log = logs.find((l) => {
-      const metadata = l.metadata as { externalId?: string } | undefined;
-      return metadata?.externalId === args.externalId;
-    });
-
-    if (!log) {
-      console.log(
-        `[resend webhook] No delivery log found for externalId: ${args.externalId}`,
-      );
-      return null;
-    }
-
-    // Update the delivery log
-    await ctx.db.patch(log._id, {
-      status: args.status,
-      metadata: {
-        ...(log.metadata as object),
-        webhookEvent: args.eventType,
-        webhookData: args.eventData,
-        webhookReceivedAt: Date.now(),
-      },
-    });
-
-    return null;
-  },
 });

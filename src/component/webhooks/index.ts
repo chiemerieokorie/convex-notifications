@@ -8,7 +8,8 @@
  * ```ts
  * // In your convex/http.ts
  * import { httpRouter } from "convex/server";
- * import { resendWebhook, twilioWebhook } from "./webhooks/index.js";
+ * import { resendWebhook } from "./webhooks/resend.js";
+ * import { twilioWebhook } from "./webhooks/twilio.js";
  *
  * const http = httpRouter();
  *
@@ -28,5 +29,5 @@
  * ```
  */
 
-export { resendWebhook, updateDeliveryFromWebhook as updateResendDelivery } from "./resend.js";
-export { twilioWebhook, updateDeliveryFromWebhook as updateTwilioDelivery } from "./twilio.js";
+export { resendWebhook } from "./resend.js";
+export { twilioWebhook } from "./twilio.js";

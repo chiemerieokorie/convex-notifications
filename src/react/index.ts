@@ -266,6 +266,3 @@ export function useDeliveryLogs(
 
   return useQuery(fn, { notificationId }) ?? [];
 }
-
-// Re-export for backwards compatibility
-export type { NotificationsApi };
