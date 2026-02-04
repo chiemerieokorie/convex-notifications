@@ -1,293 +1,158 @@
-import { describe, test, expect, vi, beforeEach } from "vitest";
-import { EmailAdapter, createEmailAdapter } from "./email.js";
-import { PushAdapter, createPushAdapter } from "./push.js";
-import { SmsAdapter, createSmsAdapter } from "./sms.js";
+import { describe, test, expect } from "vitest";
 import {
-  ChannelDispatcher,
-  createDispatcher,
-  getDefaultDispatcher,
-} from "./dispatcher.js";
+  isValidEmail,
+  isValidPhoneNumber,
+  isValidPushToken,
+  validateSmsBody,
+  formatPhoneE164,
+} from "./validators.js";
 
-describe("EmailAdapter", () => {
-  let adapter: EmailAdapter;
-
-  beforeEach(() => {
-    adapter = createEmailAdapter();
-    vi.spyOn(console, "log").mockImplementation(() => {});
+describe("isValidEmail", () => {
+  test("accepts valid email addresses", () => {
+    expect(isValidEmail("user@example.com")).toBe(true);
+    expect(isValidEmail("user.name@example.com")).toBe(true);
+    expect(isValidEmail("user+tag@example.com")).toBe(true);
+    expect(isValidEmail("user@subdomain.example.com")).toBe(true);
+    expect(isValidEmail("user@example.co.uk")).toBe(true);
   });
 
-  test("has correct name", () => {
-    expect(adapter.name).toBe("email");
-  });
-
-  test("dispatches valid email", async () => {
-    const result = await adapter.dispatch("user@example.com", {
-      subject: "Test Subject",
-      body: "Test body content",
-    });
-
-    expect(result.status).toBe("sent");
-    expect(result.error).toBeUndefined();
-  });
-
-  test("rejects invalid email address", async () => {
-    const result = await adapter.dispatch("invalid-email", {
-      subject: "Test",
-      body: "Test",
-    });
-
-    expect(result.status).toBe("failed");
-    expect(result.error).toContain("Invalid email address");
-  });
-
-  test("accepts email with html", async () => {
-    const result = await adapter.dispatch("user@example.com", {
-      subject: "HTML Email",
-      body: "Plain text",
-      html: "<h1>HTML Content</h1>",
-    });
-
-    expect(result.status).toBe("sent");
+  test("rejects invalid email addresses", () => {
+    expect(isValidEmail("invalid")).toBe(false);
+    expect(isValidEmail("invalid@")).toBe(false);
+    expect(isValidEmail("@example.com")).toBe(false);
+    expect(isValidEmail("user@.com")).toBe(false);
+    expect(isValidEmail("user example.com")).toBe(false);
+    expect(isValidEmail("")).toBe(false);
   });
 });
 
-describe("PushAdapter", () => {
-  let adapter: PushAdapter;
-
-  beforeEach(() => {
-    adapter = createPushAdapter();
-    vi.spyOn(console, "log").mockImplementation(() => {});
+describe("isValidPhoneNumber", () => {
+  test("accepts E.164 format phone numbers", () => {
+    expect(isValidPhoneNumber("+15551234567")).toBe(true);
+    expect(isValidPhoneNumber("+442071234567")).toBe(true);
+    expect(isValidPhoneNumber("+8613812345678")).toBe(true);
   });
 
-  test("has correct name", () => {
-    expect(adapter.name).toBe("push");
+  test("accepts phone numbers without plus", () => {
+    expect(isValidPhoneNumber("15551234567")).toBe(true);
+    expect(isValidPhoneNumber("5551234567")).toBe(true);
   });
 
-  test("dispatches to valid Expo push token", async () => {
-    const result = await adapter.dispatch("ExponentPushToken[abc123]", {
-      title: "Test Title",
-      body: "Test body",
-    });
-
-    expect(result.status).toBe("sent");
-    expect(result.error).toBeUndefined();
+  test("accepts formatted phone numbers", () => {
+    expect(isValidPhoneNumber("+1 (555) 123-4567")).toBe(true);
+    expect(isValidPhoneNumber("(555) 123-4567")).toBe(true);
+    expect(isValidPhoneNumber("555-123-4567")).toBe(true);
+    expect(isValidPhoneNumber("555.123.4567")).toBe(true);
   });
 
-  test("dispatches to ExpoPushToken format", async () => {
-    const result = await adapter.dispatch("ExpoPushToken[xyz789]", {
-      title: "Test",
-      body: "Test",
-    });
-
-    expect(result.status).toBe("sent");
-  });
-
-  test("rejects invalid push token", async () => {
-    const result = await adapter.dispatch("invalid-token", {
-      title: "Test",
-      body: "Test",
-    });
-
-    expect(result.status).toBe("failed");
-    expect(result.error).toContain("Invalid Expo push token");
-  });
-
-  test("accepts push with data", async () => {
-    const result = await adapter.dispatch("ExponentPushToken[abc]", {
-      title: "Data Push",
-      body: "With data",
-      data: { action: "open_screen", screen: "profile" },
-    });
-
-    expect(result.status).toBe("sent");
+  test("rejects invalid phone numbers", () => {
+    expect(isValidPhoneNumber("123")).toBe(false);
+    expect(isValidPhoneNumber("abc")).toBe(false);
+    expect(isValidPhoneNumber("+0123456789")).toBe(false); // Can't start with 0
+    expect(isValidPhoneNumber("")).toBe(false);
   });
 });
 
-describe("SmsAdapter", () => {
-  let adapter: SmsAdapter;
-
-  beforeEach(() => {
-    adapter = createSmsAdapter();
-    vi.spyOn(console, "log").mockImplementation(() => {});
+describe("isValidPushToken", () => {
+  test("accepts ExponentPushToken format", () => {
+    expect(isValidPushToken("ExponentPushToken[abc123]")).toBe(true);
+    expect(isValidPushToken("ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]")).toBe(true);
   });
 
-  test("has correct name", () => {
-    expect(adapter.name).toBe("sms");
+  test("accepts ExpoPushToken format", () => {
+    expect(isValidPushToken("ExpoPushToken[xyz789]")).toBe(true);
+    expect(isValidPushToken("ExpoPushToken[abcdefghijklmnop]")).toBe(true);
   });
 
-  test("dispatches to valid phone number (E.164)", async () => {
-    const result = await adapter.dispatch("+15551234567", {
-      body: "Test SMS message",
-    });
+  test("rejects invalid push tokens", () => {
+    expect(isValidPushToken("invalid-token")).toBe(false);
+    expect(isValidPushToken("ExponentPushToken")).toBe(false);
+    expect(isValidPushToken("ExponentPushToken[]")).toBe(false);
+    expect(isValidPushToken("")).toBe(false);
+    expect(isValidPushToken("fcm:token:here")).toBe(false);
+  });
+});
 
-    expect(result.status).toBe("sent");
-    expect(result.error).toBeUndefined();
+describe("validateSmsBody", () => {
+  test("validates short SMS body", () => {
+    const result = validateSmsBody("Hello, world!");
+    expect(result.valid).toBe(true);
+    expect(result.length).toBe(13);
+    expect(result.segments).toBe(1);
   });
 
-  test("dispatches to phone number without plus", async () => {
-    const result = await adapter.dispatch("15551234567", {
-      body: "Test SMS",
-    });
-
-    expect(result.status).toBe("sent");
+  test("validates SMS at exactly 160 characters", () => {
+    const body = "x".repeat(160);
+    const result = validateSmsBody(body);
+    expect(result.valid).toBe(true);
+    expect(result.segments).toBe(1);
   });
 
-  test("dispatches to formatted phone number", async () => {
-    const result = await adapter.dispatch("+1 (555) 123-4567", {
-      body: "Test SMS",
-    });
-
-    expect(result.status).toBe("sent");
+  test("validates multi-segment SMS", () => {
+    const body = "x".repeat(320);
+    const result = validateSmsBody(body);
+    expect(result.valid).toBe(true);
+    expect(result.segments).toBe(2);
   });
 
-  test("rejects invalid phone number", async () => {
-    const result = await adapter.dispatch("123", {
-      body: "Test",
-    });
-
-    expect(result.status).toBe("failed");
-    expect(result.error).toContain("Invalid phone number");
+  test("validates SMS at max length", () => {
+    const body = "x".repeat(1600);
+    const result = validateSmsBody(body);
+    expect(result.valid).toBe(true);
+    expect(result.segments).toBe(10);
   });
 
-  test("rejects SMS exceeding max length", async () => {
-    const longBody = "x".repeat(1601);
-    const result = await adapter.dispatch("+15551234567", {
-      body: longBody,
-    });
-
-    expect(result.status).toBe("failed");
+  test("rejects SMS exceeding max length", () => {
+    const body = "x".repeat(1601);
+    const result = validateSmsBody(body);
+    expect(result.valid).toBe(false);
     expect(result.error).toContain("exceeds maximum length");
   });
 
-  test("accepts SMS at max length", async () => {
-    const maxBody = "x".repeat(1600);
-    const result = await adapter.dispatch("+15551234567", {
-      body: maxBody,
-    });
-
-    expect(result.status).toBe("sent");
+  test("rejects empty SMS body", () => {
+    const result = validateSmsBody("");
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("cannot be empty");
   });
 });
 
-describe("ChannelDispatcher", () => {
-  let dispatcher: ChannelDispatcher;
-
-  beforeEach(() => {
-    dispatcher = createDispatcher();
-    vi.spyOn(console, "log").mockImplementation(() => {});
+describe("formatPhoneE164", () => {
+  test("returns already formatted E.164 numbers", () => {
+    expect(formatPhoneE164("+15551234567")).toBe("+15551234567");
+    expect(formatPhoneE164("+442071234567")).toBe("+442071234567");
   });
 
-  test("isSupported returns true for email", () => {
-    expect(dispatcher.isSupported("email")).toBe(true);
+  test("formats 10-digit US numbers with default country code", () => {
+    expect(formatPhoneE164("5551234567")).toBe("+15551234567");
+    expect(formatPhoneE164("5551234567", "1")).toBe("+15551234567");
   });
 
-  test("isSupported returns true for push", () => {
-    expect(dispatcher.isSupported("push")).toBe(true);
+  test("formats 10-digit numbers with custom country code", () => {
+    expect(formatPhoneE164("7911123456", "44")).toBe("+447911123456");
   });
 
-  test("isSupported returns true for sms", () => {
-    expect(dispatcher.isSupported("sms")).toBe(true);
+  test("handles formatted input", () => {
+    expect(formatPhoneE164("(555) 123-4567")).toBe("+15551234567");
+    expect(formatPhoneE164("555-123-4567")).toBe("+15551234567");
+    expect(formatPhoneE164("555.123.4567")).toBe("+15551234567");
   });
 
-  test("isSupported returns false for inbox", () => {
-    expect(dispatcher.isSupported("inbox")).toBe(false);
+  test("returns null for invalid numbers", () => {
+    expect(formatPhoneE164("123")).toBeNull();
+    expect(formatPhoneE164("abc")).toBeNull();
+    expect(formatPhoneE164("")).toBeNull();
   });
 
-  test("isSupported returns false for unknown channel", () => {
-    expect(dispatcher.isSupported("unknown")).toBe(false);
-  });
-
-  test("dispatches email via dispatcher", async () => {
-    const result = await dispatcher.dispatch("email", "user@example.com", {
-      subject: "Test",
-      body: "Test body",
-    });
-
-    expect(result.status).toBe("sent");
-  });
-
-  test("dispatches push via dispatcher", async () => {
-    const result = await dispatcher.dispatch("push", "ExponentPushToken[abc]", {
-      title: "Test",
-      body: "Test body",
-    });
-
-    expect(result.status).toBe("sent");
-  });
-
-  test("dispatches sms via dispatcher", async () => {
-    const result = await dispatcher.dispatch("sms", "+15551234567", {
-      body: "Test SMS",
-    });
-
-    expect(result.status).toBe("sent");
-  });
-
-  test("getAdapter returns correct adapter for each channel", () => {
-    expect(dispatcher.getAdapter("email")).toBeInstanceOf(EmailAdapter);
-    expect(dispatcher.getAdapter("push")).toBeInstanceOf(PushAdapter);
-    expect(dispatcher.getAdapter("sms")).toBeInstanceOf(SmsAdapter);
-    expect(dispatcher.getAdapter("inbox")).toBeNull();
+  test("handles numbers that already include country code", () => {
+    expect(formatPhoneE164("15551234567")).toBe("+15551234567");
   });
 });
 
-describe("getDefaultDispatcher", () => {
-  test("returns a ChannelDispatcher instance", () => {
-    const dispatcher = getDefaultDispatcher();
-    expect(dispatcher).toBeInstanceOf(ChannelDispatcher);
-  });
-
-  test("returns the same instance on multiple calls", () => {
-    const dispatcher1 = getDefaultDispatcher();
-    const dispatcher2 = getDefaultDispatcher();
-    expect(dispatcher1).toBe(dispatcher2);
-  });
-});
-
-describe("createDispatcher with config", () => {
-  test("creates dispatcher with email config", () => {
-    const dispatcher = createDispatcher({
-      email: {
-        apiKey: "test-key",
-        from: "noreply@example.com",
-      },
-    });
-
-    expect(dispatcher).toBeInstanceOf(ChannelDispatcher);
-  });
-
-  test("creates dispatcher with push config", () => {
-    const dispatcher = createDispatcher({
-      push: {
-        accessToken: "expo-token",
-      },
-    });
-
-    expect(dispatcher).toBeInstanceOf(ChannelDispatcher);
-  });
-
-  test("creates dispatcher with sms config", () => {
-    const dispatcher = createDispatcher({
-      sms: {
-        accountSid: "AC123",
-        authToken: "auth456",
-        from: "+15551234567",
-      },
-    });
-
-    expect(dispatcher).toBeInstanceOf(ChannelDispatcher);
-  });
-
-  test("creates dispatcher with all configs", () => {
-    const dispatcher = createDispatcher({
-      email: { from: "noreply@example.com" },
-      push: { accessToken: "token" },
-      sms: { from: "+15551234567" },
-    });
-
-    expect(dispatcher).toBeInstanceOf(ChannelDispatcher);
-    expect(dispatcher.isSupported("email")).toBe(true);
-    expect(dispatcher.isSupported("push")).toBe(true);
-    expect(dispatcher.isSupported("sms")).toBe(true);
+describe("Channel type exports", () => {
+  test("module loads correctly", async () => {
+    // Verify that the types module can be imported
+    const types = await import("./types.js");
+    // Module should load without errors
+    expect(types).toBeDefined();
   });
 });

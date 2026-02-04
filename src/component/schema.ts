@@ -48,9 +48,12 @@ export default defineSchema({
     error: v.optional(v.string()),
     sentAt: v.optional(v.number()),
     metadata: v.optional(v.any()),
+    // External ID from delivery provider (e.g., Resend email ID, Twilio message SID)
+    externalId: v.optional(v.string()),
   })
     .index("by_notificationId", ["notificationId"])
-    .index("by_status", ["status"]),
+    .index("by_status", ["status"])
+    .index("by_externalId", ["externalId"]),
 
   pushTokens: defineTable({
     userId: v.string(),
@@ -60,4 +63,78 @@ export default defineSchema({
   })
     .index("by_userId", ["userId"])
     .index("by_token", ["token"]),
+
+  /**
+   * Scheduled notifications waiting to be sent.
+   * Processed by a cron job that dispatches them when scheduledFor time is reached.
+   */
+  scheduledNotifications: defineTable({
+    userId: v.string(),
+    event: v.string(),
+    category: v.optional(v.string()),
+    title: v.string(),
+    body: v.string(),
+    data: v.optional(v.any()),
+    channels: v.any(), // Channel templates
+    scheduledFor: v.number(), // Timestamp when to send
+    transactional: v.optional(v.boolean()),
+    deduplicationKey: v.optional(v.string()),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("processing"),
+      v.literal("sent"),
+      v.literal("failed"),
+      v.literal("cancelled"),
+    ),
+    error: v.optional(v.string()),
+    processedAt: v.optional(v.number()),
+  })
+    .index("by_status_scheduledFor", ["status", "scheduledFor"])
+    .index("by_userId", ["userId"])
+    .index("by_userId_status", ["userId", "status"]),
+
+  /**
+   * Retry queue for failed deliveries.
+   * Used by the workflow component to retry failed channel dispatches.
+   */
+  retryQueue: defineTable({
+    notificationId: v.id("notifications"),
+    deliveryLogId: v.id("deliveryLog"),
+    channel: v.string(),
+    attempt: v.number(),
+    maxAttempts: v.number(),
+    nextRetryAt: v.number(),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("processing"),
+      v.literal("succeeded"),
+      v.literal("exhausted"),
+    ),
+    lastError: v.optional(v.string()),
+    // Rendered content to retry
+    rendered: v.any(),
+  })
+    .index("by_status_nextRetryAt", ["status", "nextRetryAt"])
+    .index("by_notificationId", ["notificationId"])
+    .index("by_notificationId_channel", ["notificationId", "channel"]),
+
+  /**
+   * Channel fallback queue.
+   * Tracks push notifications that should fall back to email if unread.
+   */
+  fallbackQueue: defineTable({
+    notificationId: v.id("notifications"),
+    userId: v.string(),
+    fromChannel: v.string(), // e.g., "push"
+    toChannel: v.string(), // e.g., "email"
+    fallbackAt: v.number(), // When to trigger fallback
+    status: v.union(
+      v.literal("pending"),
+      v.literal("cancelled"), // User read the notification
+      v.literal("triggered"), // Fallback was sent
+    ),
+    triggeredAt: v.optional(v.number()),
+  })
+    .index("by_status_fallbackAt", ["status", "fallbackAt"])
+    .index("by_notificationId", ["notificationId"]),
 });

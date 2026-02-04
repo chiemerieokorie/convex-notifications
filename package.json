@@ -69,6 +69,10 @@
     "./channels": {
       "types": "./dist/component/channels/index.d.ts",
       "default": "./dist/component/channels/index.js"
+    },
+    "./webhooks": {
+      "types": "./dist/component/webhooks/index.d.ts",
+      "default": "./dist/component/webhooks/index.js"
     }
   },
   "peerDependencies": {

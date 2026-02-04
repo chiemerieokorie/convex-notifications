@@ -182,4 +182,41 @@ export type ComponentApi<
       Name
     >;
   };
+  scheduled: {
+    scheduleNotification: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        userId: string;
+        event: string;
+        category?: string;
+        title: string;
+        body: string;
+        data?: any;
+        channels: any;
+        scheduledFor: number;
+        transactional?: boolean;
+        deduplicationKey?: string;
+      },
+      string,
+      Name
+    >;
+    cancelScheduledNotification: FunctionReference<
+      "mutation",
+      "internal",
+      { id: string; userId: string },
+      boolean,
+      Name
+    >;
+    getScheduledNotifications: FunctionReference<
+      "query",
+      "internal",
+      {
+        userId: string;
+        status?: "pending" | "processing" | "sent" | "failed" | "cancelled";
+      },
+      any[],
+      Name
+    >;
+  };
 };

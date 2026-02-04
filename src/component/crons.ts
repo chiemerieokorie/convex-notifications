@@ -1,0 +1,51 @@
+import { cronJobs } from "convex/server";
+import { internal } from "./_generated/api.js";
+
+const crons = cronJobs();
+
+/**
+ * Clean up expired deduplication keys every hour.
+ * This prevents the deduplication table from growing indefinitely.
+ */
+crons.interval(
+  "cleanup expired deduplication keys",
+  { hours: 1 },
+  internal.notifications.cleanupExpiredDeduplication,
+  { batchSize: 500 },
+);
+
+/**
+ * Process scheduled notifications every minute.
+ * This dispatches notifications that are scheduled for the current time.
+ */
+crons.interval(
+  "process scheduled notifications",
+  { minutes: 1 },
+  internal.notifications.processScheduledNotifications,
+  { batchSize: 50 },
+);
+
+/**
+ * Process retry queue every minute.
+ * This handles retrying failed channel deliveries with exponential backoff.
+ */
+crons.interval(
+  "process retry queue",
+  { minutes: 1 },
+  internal.notifications.processRetryQueue,
+  { batchSize: 50 },
+);
+
+/**
+ * Process channel fallbacks every minute.
+ * This handles falling back to alternative channels (e.g., push → email)
+ * when notifications remain unread.
+ */
+crons.interval(
+  "process channel fallbacks",
+  { minutes: 1 },
+  internal.fallback.processFallbacks,
+  { batchSize: 50 },
+);
+
+export default crons;
