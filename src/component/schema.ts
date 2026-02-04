@@ -51,4 +51,13 @@ export default defineSchema({
   })
     .index("by_notificationId", ["notificationId"])
     .index("by_status", ["status"]),
+
+  pushTokens: defineTable({
+    userId: v.string(),
+    token: v.string(),
+    platform: v.optional(v.union(v.literal("ios"), v.literal("android"), v.literal("web"))),
+    deviceId: v.optional(v.string()),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_token", ["token"]),
 });

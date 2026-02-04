@@ -147,4 +147,39 @@ export type ComponentApi<
       Name
     >;
   };
+  pushTokens: {
+    registerPushToken: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        userId: string;
+        token: string;
+        platform?: "ios" | "android" | "web";
+        deviceId?: string;
+      },
+      string,
+      Name
+    >;
+    getPushTokens: FunctionReference<
+      "query",
+      "internal",
+      { userId: string },
+      Array<{
+        _id: string;
+        _creationTime: number;
+        userId: string;
+        token: string;
+        platform?: "ios" | "android" | "web";
+        deviceId?: string;
+      }>,
+      Name
+    >;
+    deletePushToken: FunctionReference<
+      "mutation",
+      "internal",
+      { userId: string; token: string },
+      boolean,
+      Name
+    >;
+  };
 };

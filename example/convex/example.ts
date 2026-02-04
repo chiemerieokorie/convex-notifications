@@ -73,6 +73,25 @@ export const {
   updatePreference,
 } = notifications.api();
 
+export const registerPushToken = mutation({
+  args: {
+    token: v.string(),
+    platform: v.optional(v.union(v.literal("ios"), v.literal("android"), v.literal("web"))),
+    deviceId: v.optional(v.string()),
+  },
+  handler: (ctx, args) => notifications.registerPushToken(ctx, args),
+});
+
+export const getPushTokens = query({
+  args: {},
+  handler: (ctx) => notifications.getPushTokens(ctx),
+});
+
+export const deletePushToken = mutation({
+  args: { token: v.string() },
+  handler: (ctx, args) => notifications.deletePushToken(ctx, args.token),
+});
+
 // --- Send mutations ---
 
 export const sendTestNotification = mutation({
