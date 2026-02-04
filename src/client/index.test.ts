@@ -1,10 +1,10 @@
 import { describe, expect, test, vi, beforeEach, afterEach } from "vitest";
 import { anyApi, type ApiFromModules } from "convex/server";
+import { mutationGeneric, queryGeneric } from "convex/server";
 import { components, initConvexTest } from "./setup.test.js";
 import { Notifications } from "./index.js";
 import type { NotificationDefinition } from "./types.js";
 import { v } from "convex/values";
-import { query, mutation } from "../component/_generated/server.js";
 
 // Instantiate class
 const notifications = new Notifications(components.notifications, {
@@ -69,6 +69,19 @@ const asyncHtmlEmailDef: NotificationDefinition<{ userName: string }> = {
   },
 };
 
+// Use the new api() method for plug-and-play exports (no more 40+ lines of boilerplate!)
+export const {
+  list,
+  unreadCount,
+  markRead,
+  markAllRead,
+  archive,
+  getPreferences,
+  updatePreference,
+} = notifications.api();
+
+// The send mutation is still custom since it requires a notification definition
+export const send = mutationGeneric({
 // Exported query/mutation wrappers (same pattern as example app)
 export const list = query({
   args: { limit: v.optional(v.number()), cursor: v.optional(v.number()) },
@@ -151,7 +164,7 @@ export const send = mutation({
     }),
 });
 
-export const getDeliveryLogs = query({
+export const getDeliveryLogs = queryGeneric({
   args: { notificationId: v.string() },
   returns: v.array(v.any()),
   handler: async (ctx, args) => {
@@ -161,7 +174,7 @@ export const getDeliveryLogs = query({
   },
 });
 
-export const sendHtmlEmail = mutation({
+export const sendHtmlEmail = mutationGeneric({
   args: {
     userId: v.string(),
     data: v.object({ userName: v.string() }),
@@ -173,7 +186,7 @@ export const sendHtmlEmail = mutation({
     }),
 });
 
-export const sendAsyncHtmlEmail = mutation({
+export const sendAsyncHtmlEmail = mutationGeneric({
   args: {
     userId: v.string(),
     data: v.object({ userName: v.string() }),
