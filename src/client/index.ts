@@ -191,16 +191,19 @@ export class Notifications {
       );
     }
 
-    // 5. Dispatch to each enabled non-inbox channel (stub)
+    // 5. Dispatch to each enabled non-inbox channel
     for (const channel of enabledChannels) {
       if (channel === "inbox") continue;
 
       let rendered: Record<string, string> | undefined;
 
       if (channel === "email" && definition.channels.email) {
+        const emailTemplate = definition.channels.email;
+        const html = emailTemplate.html ? await emailTemplate.html(data) : undefined;
         rendered = {
-          subject: definition.channels.email.subject(data),
-          body: definition.channels.email.body(data),
+          subject: emailTemplate.subject(data),
+          body: emailTemplate.body(data),
+          ...(html && { html }),
         };
       } else if (channel === "push" && definition.channels.push) {
         rendered = {
@@ -215,18 +218,38 @@ export class Notifications {
 
       if (!rendered) continue;
 
-      await ctx.runMutation(this.component.delivery.createDeliveryLog, {
-        notificationId,
-        channel,
-        status: "pending" as const,
-        metadata: rendered,
-      });
-
-      // Stub: real adapters will replace this
-      console.log(
-        `[notifications] stub dispatch ${channel} → user ${args.userId}:`,
-        rendered,
+      const deliveryLogId = await ctx.runMutation(
+        this.component.delivery.createDeliveryLog,
+        {
+          notificationId,
+          channel,
+          status: "pending" as const,
+          metadata: rendered,
+        },
       );
+
+      // Attempt dispatch and update delivery status
+      try {
+        // Stub: real adapters will replace this dispatch logic
+        console.log(
+          `[notifications] stub dispatch ${channel} → user ${args.userId}:`,
+          rendered,
+        );
+
+        // Update status to "sent" after successful dispatch
+        await ctx.runMutation(this.component.delivery.updateDeliveryStatus, {
+          deliveryLogId,
+          status: "sent" as const,
+          sentAt: Date.now(),
+        });
+      } catch (error) {
+        // Update status to "failed" if dispatch fails
+        await ctx.runMutation(this.component.delivery.updateDeliveryStatus, {
+          deliveryLogId,
+          status: "failed" as const,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
 
     return notificationId;
