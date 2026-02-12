@@ -54,6 +54,25 @@ import type { Auth } from "convex/server";
 
 // --- Setup ---
 
+// === SINGLE-TENANT SETUP (backwards compatible) ===
+// For a single-tenant app, auth returns a simple userId string:
+//
+//   async function getAuthUserId(ctx: { auth: Auth }) {
+//     return (await ctx.auth.getUserIdentity())?.subject ?? "anonymous";
+//   }
+
+// === MULTI-TENANT SETUP ===
+// For a multi-tenant app (e.g., a platform with businesses sending to their
+// clients), auth returns { userId, tenantId }:
+//
+//   async function getAuth(ctx: { auth: Auth }) {
+//     const identity = await ctx.auth.getUserIdentity();
+//     return {
+//       userId: identity?.subject ?? "anonymous",
+//       tenantId: identity?.orgId ?? "default",
+//     };
+//   }
+
 async function getAuthUserId(ctx: { auth: Auth }) {
   return (await ctx.auth.getUserIdentity())?.subject ?? "anonymous";
 }
@@ -64,10 +83,19 @@ async function getAuthUserId(ctx: { auth: Auth }) {
 async function getEmailForUser(
   _ctx: RunMutationCtx,
   userId: string,
+  _tenantId?: string,
 ): Promise<string | null> {
   // In production, query your users table:
   // const user = await ctx.db.get(userId as Id<"users">);
   // return user?.email ?? null;
+
+  // Multi-tenant example: look up email in tenant's contacts table
+  // if (tenantId) {
+  //   const contact = await ctx.db.query("contacts")
+  //     .withIndex("by_tenantId_userId", q => q.eq("tenantId", tenantId).eq("userId", userId))
+  //     .first();
+  //   return contact?.email ?? null;
+  // }
 
   // For demo purposes, return a test email
   return `${userId}@example.com`;
@@ -76,6 +104,7 @@ async function getEmailForUser(
 async function getPhoneForUser(
   _ctx: RunMutationCtx,
   _userId: string,
+  _tenantId?: string,
 ): Promise<string | null> {
   // In production, query your users table:
   // const user = await ctx.db.get(userId as Id<"users">);
@@ -89,7 +118,7 @@ async function getPhoneForUser(
 const notifications = new Notifications(components.notifications, {
   auth: getAuthUserId,
 
-  // Channel configuration
+  // Channel configuration (static — same for all senders)
   channels: {
     email: {
       defaultFrom: "notifications@example.com",
@@ -108,6 +137,21 @@ const notifications = new Notifications(components.notifications, {
     email: getEmailForUser,
     phone: getPhoneForUser,
   },
+
+  // === DYNAMIC SENDER IDENTITY (multi-tenant) ===
+  // Uncomment to resolve "from" addresses dynamically per tenant.
+  // These take priority over static channel config defaults.
+  //
+  // senderResolvers: {
+  //   email: async (ctx, tenantId) => {
+  //     const tenant = await ctx.runQuery(api.tenants.get, { id: tenantId });
+  //     return `notifications@${tenant.domain}`;
+  //   },
+  //   sms: async (ctx, tenantId) => {
+  //     const tenant = await ctx.runQuery(api.tenants.get, { id: tenantId });
+  //     return tenant.twilioPhoneNumber; // e.g., "+15551234567"
+  //   },
+  // },
 
   // Child component clients for actual delivery
   // Uncomment after running codegen with child components:
@@ -215,17 +259,23 @@ export const {
 export const sendTestNotification = mutation({
   args: {
     userId: v.optional(v.string()),
+    tenantId: v.optional(v.string()),
     data: v.object({ userName: v.string() }),
   },
   handler: async (ctx, args) => {
     const userId = args.userId ?? (await getAuthUserId(ctx));
-    return notifications.send(ctx, welcomeNotification, { userId, data: args.data });
+    return notifications.send(ctx, welcomeNotification, {
+      userId,
+      tenantId: args.tenantId,
+      data: args.data,
+    });
   },
 });
 
 export const sendCommentReply = mutation({
   args: {
     userId: v.optional(v.string()),
+    tenantId: v.optional(v.string()),
     data: v.object({
       commenterName: v.string(),
       postTitle: v.string(),
@@ -235,6 +285,7 @@ export const sendCommentReply = mutation({
     const userId = args.userId ?? (await getAuthUserId(ctx));
     return notifications.send(ctx, commentReplyNotification, {
       userId,
+      tenantId: args.tenantId,
       data: args.data,
     });
   },

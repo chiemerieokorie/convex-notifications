@@ -10,6 +10,7 @@ const statusValidator = v.union(
 
 export const createDeliveryLog = internalMutation({
   args: {
+    tenantId: v.optional(v.string()),
     notificationId: v.id("notifications"),
     channel: v.string(),
     status: statusValidator,
@@ -19,6 +20,7 @@ export const createDeliveryLog = internalMutation({
   returns: v.id("deliveryLog"),
   handler: async (ctx, args) => {
     return await ctx.db.insert("deliveryLog", {
+      tenantId: args.tenantId,
       notificationId: args.notificationId,
       channel: args.channel,
       status: args.status,

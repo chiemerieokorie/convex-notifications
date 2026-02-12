@@ -3,6 +3,7 @@ import { internalMutation, internalQuery } from "./_generated/server.js";
 
 export const list = internalQuery({
   args: {
+    tenantId: v.optional(v.string()),
     userId: v.string(),
     limit: v.optional(v.number()),
     cursor: v.optional(v.number()),
@@ -13,9 +14,15 @@ export const list = internalQuery({
   }),
   handler: async (ctx, args) => {
     const limit = args.limit ?? 20;
-    const q = ctx.db
-      .query("notifications")
-      .withIndex("by_userId", (q) => q.eq("userId", args.userId));
+    const q = args.tenantId !== undefined
+      ? ctx.db
+          .query("notifications")
+          .withIndex("by_tenantId_userId", (q) =>
+            q.eq("tenantId", args.tenantId).eq("userId", args.userId),
+          )
+      : ctx.db
+          .query("notifications")
+          .withIndex("by_userId", (q) => q.eq("userId", args.userId));
 
     const all = await q.order("desc").collect();
 
@@ -36,21 +43,31 @@ export const list = internalQuery({
 });
 
 export const unreadCount = internalQuery({
-  args: { userId: v.string() },
+  args: {
+    tenantId: v.optional(v.string()),
+    userId: v.string(),
+  },
   returns: v.number(),
   handler: async (ctx, args) => {
-    const results = await ctx.db
-      .query("notifications")
-      .withIndex("by_userId_unread", (q) =>
-        q.eq("userId", args.userId).eq("readAt", undefined),
-      )
-      .collect();
+    const q = args.tenantId !== undefined
+      ? ctx.db
+          .query("notifications")
+          .withIndex("by_tenantId_userId_unread", (q) =>
+            q.eq("tenantId", args.tenantId).eq("userId", args.userId).eq("readAt", undefined),
+          )
+      : ctx.db
+          .query("notifications")
+          .withIndex("by_userId_unread", (q) =>
+            q.eq("userId", args.userId).eq("readAt", undefined),
+          );
+    const results = await q.collect();
     return results.filter((n) => n.archivedAt === undefined).length;
   },
 });
 
 export const markRead = internalMutation({
   args: {
+    tenantId: v.optional(v.string()),
     userId: v.string(),
     notificationId: v.id("notifications"),
   },
@@ -80,15 +97,24 @@ export const markRead = internalMutation({
 });
 
 export const markAllRead = internalMutation({
-  args: { userId: v.string() },
+  args: {
+    tenantId: v.optional(v.string()),
+    userId: v.string(),
+  },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const unread = await ctx.db
-      .query("notifications")
-      .withIndex("by_userId_unread", (q) =>
-        q.eq("userId", args.userId).eq("readAt", undefined),
-      )
-      .collect();
+    const q = args.tenantId !== undefined
+      ? ctx.db
+          .query("notifications")
+          .withIndex("by_tenantId_userId_unread", (q) =>
+            q.eq("tenantId", args.tenantId).eq("userId", args.userId).eq("readAt", undefined),
+          )
+      : ctx.db
+          .query("notifications")
+          .withIndex("by_userId_unread", (q) =>
+            q.eq("userId", args.userId).eq("readAt", undefined),
+          );
+    const unread = await q.collect();
     const now = Date.now();
     for (const n of unread) {
       await ctx.db.patch(n._id, { readAt: now });
@@ -110,6 +136,7 @@ export const markAllRead = internalMutation({
 
 export const archive = internalMutation({
   args: {
+    tenantId: v.optional(v.string()),
     userId: v.string(),
     notificationId: v.id("notifications"),
   },

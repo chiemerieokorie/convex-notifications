@@ -2,18 +2,28 @@ import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server.js";
 
 export const getPreferences = internalQuery({
-  args: { userId: v.string() },
+  args: {
+    tenantId: v.optional(v.string()),
+    userId: v.string(),
+  },
   returns: v.array(v.any()),
   handler: async (ctx, args) => {
-    return await ctx.db
-      .query("preferences")
-      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
-      .collect();
+    const q = args.tenantId !== undefined
+      ? ctx.db
+          .query("preferences")
+          .withIndex("by_tenantId_userId", (q) =>
+            q.eq("tenantId", args.tenantId).eq("userId", args.userId),
+          )
+      : ctx.db
+          .query("preferences")
+          .withIndex("by_userId", (q) => q.eq("userId", args.userId));
+    return await q.collect();
   },
 });
 
 export const updatePreference = internalMutation({
   args: {
+    tenantId: v.optional(v.string()),
     userId: v.string(),
     level: v.union(
       v.literal("global"),
@@ -27,12 +37,18 @@ export const updatePreference = internalMutation({
   returns: v.id("preferences"),
   handler: async (ctx, args) => {
     // Find existing preference
-    const existing = await ctx.db
-      .query("preferences")
-      .withIndex("by_userId_level_key", (q) =>
-        q.eq("userId", args.userId).eq("level", args.level).eq("key", args.key),
-      )
-      .collect();
+    const q = args.tenantId !== undefined
+      ? ctx.db
+          .query("preferences")
+          .withIndex("by_tenantId_userId_level_key", (q) =>
+            q.eq("tenantId", args.tenantId).eq("userId", args.userId).eq("level", args.level).eq("key", args.key),
+          )
+      : ctx.db
+          .query("preferences")
+          .withIndex("by_userId_level_key", (q) =>
+            q.eq("userId", args.userId).eq("level", args.level).eq("key", args.key),
+          );
+    const existing = await q.collect();
 
     const match = existing.find((p) => p.channel === args.channel);
 
@@ -42,6 +58,7 @@ export const updatePreference = internalMutation({
     }
 
     return await ctx.db.insert("preferences", {
+      tenantId: args.tenantId,
       userId: args.userId,
       level: args.level,
       key: args.key,
@@ -53,6 +70,7 @@ export const updatePreference = internalMutation({
 
 export const resolvePreferences = internalQuery({
   args: {
+    tenantId: v.optional(v.string()),
     userId: v.string(),
     event: v.string(),
     category: v.optional(v.string()),
@@ -60,10 +78,16 @@ export const resolvePreferences = internalQuery({
   },
   returns: v.array(v.string()),
   handler: async (ctx, args) => {
-    const allPrefs = await ctx.db
-      .query("preferences")
-      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
-      .collect();
+    const q = args.tenantId !== undefined
+      ? ctx.db
+          .query("preferences")
+          .withIndex("by_tenantId_userId", (q) =>
+            q.eq("tenantId", args.tenantId).eq("userId", args.userId),
+          )
+      : ctx.db
+          .query("preferences")
+          .withIndex("by_userId", (q) => q.eq("userId", args.userId));
+    const allPrefs = await q.collect();
 
     const enabled: string[] = [];
 

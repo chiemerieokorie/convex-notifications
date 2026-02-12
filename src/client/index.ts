@@ -15,6 +15,8 @@ import type {
   RunActionCtx,
   DeliveryResult,
   SendResult,
+  AuthIdentity,
+  ChannelConfig,
 } from "./types.js";
 import type { PushNotifications } from "@convex-dev/expo-push-notifications";
 import type { Resend } from "@convex-dev/resend";
@@ -29,7 +31,7 @@ import {
   type RenderedSms,
 } from "./adapters.js";
 
-export type { NotificationsOptions, NotificationDefinition } from "./types.js";
+export type { NotificationsOptions, NotificationDefinition, AuthIdentity } from "./types.js";
 export type {
   ChannelTemplates,
   EmailTemplate,
@@ -93,6 +95,17 @@ export function createNotification<T>(
 }
 
 /**
+ * Parse an AuthIdentity into userId and optional tenantId.
+ * Supports both string (backwards compat) and { userId, tenantId } forms.
+ */
+function parseIdentity(identity: AuthIdentity): { userId: string; tenantId?: string } {
+  if (typeof identity === "string") {
+    return { userId: identity };
+  }
+  return { userId: identity.userId, tenantId: identity.tenantId };
+}
+
+/**
  * Extended options that include child component clients for delivery.
  */
 export type NotificationsWithChannelsOptions = NotificationsOptions & {
@@ -125,50 +138,77 @@ export class Notifications {
     public options: NotificationsWithChannelsOptions,
   ) {}
 
+  /**
+   * Resolve the auth identity and return userId + optional tenantId.
+   */
+  private async resolveAuth(ctx: { auth: import("convex/server").Auth }): Promise<{ userId: string; tenantId?: string }> {
+    const identity = await this.options.auth(ctx);
+    return parseIdentity(identity);
+  }
+
+  /**
+   * Resolve channel config, which may be static or a per-tenant function.
+   */
+  private async resolveChannelConfig(tenantId?: string): Promise<ChannelConfig | undefined> {
+    const channels = this.options.channels;
+    if (!channels) return undefined;
+    if (typeof channels === "function") {
+      if (!tenantId) {
+        throw new Error("Channel config is a function but no tenantId provided. Use multi-tenant auth or pass tenantId explicitly.");
+      }
+      return await channels(tenantId);
+    }
+    return channels;
+  }
+
   async list(
     ctx: RunQueryCtx,
     opts?: { limit?: number; cursor?: number },
   ) {
-    const userId = await this.options.auth(ctx);
+    const { userId, tenantId } = await this.resolveAuth(ctx);
     return await ctx.runQuery(this.component.inbox.list, {
+      tenantId,
       userId,
       ...opts,
     });
   }
 
   async unreadCount(ctx: RunQueryCtx) {
-    const userId = await this.options.auth(ctx);
-    return await ctx.runQuery(this.component.inbox.unreadCount, { userId });
+    const { userId, tenantId } = await this.resolveAuth(ctx);
+    return await ctx.runQuery(this.component.inbox.unreadCount, { tenantId, userId });
   }
 
   async markRead(ctx: RunMutationCtx, notificationId: string) {
-    const userId = await this.options.auth(ctx);
+    const { userId, tenantId } = await this.resolveAuth(ctx);
     return await ctx.runMutation(this.component.inbox.markRead, {
+      tenantId,
       userId,
       notificationId,
     });
   }
 
   async markAllRead(ctx: RunMutationCtx) {
-    const userId = await this.options.auth(ctx);
+    const { userId, tenantId } = await this.resolveAuth(ctx);
     return await ctx.runMutation(this.component.inbox.markAllRead, {
+      tenantId,
       userId,
     });
   }
 
   async archive(ctx: RunMutationCtx, notificationId: string) {
-    const userId = await this.options.auth(ctx);
+    const { userId, tenantId } = await this.resolveAuth(ctx);
     return await ctx.runMutation(this.component.inbox.archive, {
+      tenantId,
       userId,
       notificationId,
     });
   }
 
   async getPreferences(ctx: RunQueryCtx) {
-    const userId = await this.options.auth(ctx);
+    const { userId, tenantId } = await this.resolveAuth(ctx);
     return await ctx.runQuery(
       this.component.preferences.getPreferences,
-      { userId },
+      { tenantId, userId },
     );
   }
 
@@ -181,10 +221,10 @@ export class Notifications {
       enabled: boolean;
     },
   ) {
-    const userId = await this.options.auth(ctx);
+    const { userId, tenantId } = await this.resolveAuth(ctx);
     return await ctx.runMutation(
       this.component.preferences.updatePreference,
-      { userId, ...args },
+      { tenantId, userId, ...args },
     );
   }
 
@@ -200,8 +240,9 @@ export class Notifications {
       deviceId?: string;
     },
   ) {
-    const userId = await this.options.auth(ctx);
+    const { userId, tenantId } = await this.resolveAuth(ctx);
     return await ctx.runMutation(this.component.pushTokens.registerPushToken, {
+      tenantId,
       userId,
       token: args.token,
       platform: args.platform,
@@ -213,8 +254,9 @@ export class Notifications {
    * Get all push tokens for the current user.
    */
   async getPushTokens(ctx: RunQueryCtx) {
-    const userId = await this.options.auth(ctx);
+    const { userId, tenantId } = await this.resolveAuth(ctx);
     return await ctx.runQuery(this.component.pushTokens.getPushTokens, {
+      tenantId,
       userId,
     });
   }
@@ -223,8 +265,9 @@ export class Notifications {
    * Delete a push token.
    */
   async deletePushToken(ctx: RunMutationCtx, token: string) {
-    const userId = await this.options.auth(ctx);
+    const { userId, tenantId } = await this.resolveAuth(ctx);
     return await ctx.runMutation(this.component.pushTokens.deletePushToken, {
+      tenantId,
       userId,
       token,
     });
@@ -240,6 +283,7 @@ export class Notifications {
     definition: NotificationDefinition<T>,
     args: {
       userId: string;
+      tenantId?: string;
       data: T;
       scheduledFor: number | Date;
       transactional?: boolean;
@@ -267,6 +311,7 @@ export class Notifications {
     const scheduledNotificationId = await ctx.runMutation(
       this.component.scheduled.scheduleNotification,
       {
+        tenantId: args.tenantId,
         userId: args.userId,
         event: definition.event,
         category: definition.category,
@@ -292,10 +337,11 @@ export class Notifications {
     ctx: RunMutationCtx,
     scheduledNotificationId: string,
   ): Promise<boolean> {
-    const userId = await this.options.auth(ctx);
+    const { userId, tenantId } = await this.resolveAuth(ctx);
     return await ctx.runMutation(
       this.component.scheduled.cancelScheduledNotification,
       {
+        tenantId,
         id: scheduledNotificationId as any,
         userId,
       },
@@ -309,10 +355,11 @@ export class Notifications {
     ctx: RunQueryCtx,
     opts?: { status?: "pending" | "processing" | "sent" | "failed" | "cancelled" },
   ) {
-    const userId = await this.options.auth(ctx);
+    const { userId, tenantId } = await this.resolveAuth(ctx);
     return await ctx.runQuery(
       this.component.scheduled.getScheduledNotifications,
       {
+        tenantId,
         userId,
         status: opts?.status,
       },
@@ -329,6 +376,7 @@ export class Notifications {
     definition: NotificationDefinition<T>,
     args: {
       userId: string;
+      tenantId?: string;
       data: T;
       transactional?: boolean;
       deduplicationKey?: string;
@@ -336,13 +384,17 @@ export class Notifications {
     },
   ): Promise<SendResult> {
     const data = args.data;
+    const tenantId = args.tenantId;
     const deliveries: DeliveryResult[] = [];
 
-    // 1. Check deduplication
+    // 1. Check deduplication (scope key to tenant if provided)
     if (args.deduplicationKey) {
+      const scopedKey = tenantId
+        ? `${tenantId}:${args.deduplicationKey}`
+        : args.deduplicationKey;
       const isDuplicate = await ctx.runQuery(
         this.component.notifications.checkDeduplication,
-        { key: args.deduplicationKey },
+        { key: scopedKey },
       );
       if (isDuplicate) {
         throw new Error(
@@ -361,6 +413,7 @@ export class Notifications {
     const notificationId = await ctx.runMutation(
       this.component.notifications.createNotification,
       {
+        tenantId,
         userId: args.userId,
         event: definition.event,
         title,
@@ -372,10 +425,13 @@ export class Notifications {
 
     // 3. Record deduplication key
     if (args.deduplicationKey) {
+      const scopedKey = tenantId
+        ? `${tenantId}:${args.deduplicationKey}`
+        : args.deduplicationKey;
       await ctx.runMutation(
         this.component.notifications.recordDeduplication,
         {
-          key: args.deduplicationKey,
+          key: scopedKey,
           ttlSeconds: args.deduplicationTtlSeconds ?? 86400,
         },
       );
@@ -391,6 +447,7 @@ export class Notifications {
       enabledChannels = await ctx.runQuery(
         this.component.preferences.resolvePreferences,
         {
+          tenantId,
           userId: args.userId,
           event: definition.event,
           category: definition.category,
@@ -410,6 +467,7 @@ export class Notifications {
         args.userId,
         data,
         notificationId,
+        tenantId,
       );
 
       if (deliveryResult) {
@@ -430,14 +488,18 @@ export class Notifications {
     userId: string,
     data: T,
     notificationId: string,
+    tenantId?: string,
   ): Promise<DeliveryResult | null> {
     let rendered: Record<string, unknown> | undefined;
     let result: DeliveryResult | undefined;
 
     try {
+      // Resolve channel config (may be per-tenant)
+      const channelConfig = await this.resolveChannelConfig(tenantId);
+
       if (channel === "email" && definition.channels.email) {
         const emailTemplate = definition.channels.email;
-        const emailConfig = this.options.channels?.email;
+        const emailConfig = channelConfig?.email;
         const resendClient = this.options.clients?.email;
 
         // Resolve email address
@@ -445,7 +507,7 @@ export class Notifications {
         if (!emailResolver) {
           throw new Error("Email resolver not configured");
         }
-        const toEmail = await emailResolver(ctx as RunMutationCtx, userId);
+        const toEmail = await emailResolver(ctx as RunMutationCtx, userId, tenantId);
         if (!toEmail) {
           return {
             channel: "email",
@@ -454,11 +516,17 @@ export class Notifications {
           };
         }
 
+        // Resolve "from" address: sender resolver > template override > channel config default
+        let fromEmail = emailTemplate.from ?? emailConfig?.defaultFrom ?? "";
+        if (tenantId && this.options.senderResolvers?.email) {
+          fromEmail = await this.options.senderResolvers.email(ctx as RunMutationCtx, tenantId);
+        }
+
         // Support async html rendering (e.g., React Email)
         const html = emailTemplate.html ? await emailTemplate.html(data) : undefined;
 
         const renderedEmail: RenderedEmail = {
-          from: emailTemplate.from ?? emailConfig?.defaultFrom ?? "",
+          from: fromEmail,
           to: toEmail,
           subject: emailTemplate.subject(data),
           body: emailTemplate.body(data),
@@ -469,7 +537,7 @@ export class Notifications {
 
         if (!renderedEmail.from) {
           throw new Error(
-            "No 'from' address configured. Set channels.email.defaultFrom or specify 'from' in the email template.",
+            "No 'from' address configured. Set channels.email.defaultFrom, configure a senderResolver, or specify 'from' in the email template.",
           );
         }
 
@@ -494,7 +562,7 @@ export class Notifications {
         }
       } else if (channel === "push" && definition.channels.push) {
         const pushTemplate = definition.channels.push;
-        const pushConfig = this.options.channels?.push;
+        const pushConfig = channelConfig?.push;
         const pushClient = this.options.clients?.push;
 
         const renderedPush: RenderedPush = {
@@ -527,7 +595,7 @@ export class Notifications {
         }
       } else if (channel === "sms" && definition.channels.sms) {
         const smsTemplate = definition.channels.sms;
-        const smsConfig = this.options.channels?.sms;
+        const smsConfig = channelConfig?.sms;
         const twilioClient = this.options.clients?.sms;
 
         // Resolve phone number
@@ -535,7 +603,7 @@ export class Notifications {
         if (!phoneResolver) {
           throw new Error("Phone resolver not configured");
         }
-        const toPhone = await phoneResolver(ctx as RunMutationCtx, userId);
+        const toPhone = await phoneResolver(ctx as RunMutationCtx, userId, tenantId);
         if (!toPhone) {
           return {
             channel: "sms",
@@ -544,8 +612,14 @@ export class Notifications {
           };
         }
 
+        // Resolve "from" number: sender resolver > template override > channel config default
+        let fromPhone = smsTemplate.from ?? smsConfig?.defaultFrom ?? "";
+        if (tenantId && this.options.senderResolvers?.sms) {
+          fromPhone = await this.options.senderResolvers.sms(ctx as RunMutationCtx, tenantId);
+        }
+
         const renderedSms: RenderedSms = {
-          from: smsTemplate.from ?? smsConfig?.defaultFrom ?? "",
+          from: fromPhone,
           to: toPhone,
           body: smsTemplate.body(data),
         };
@@ -554,7 +628,7 @@ export class Notifications {
 
         if (!renderedSms.from) {
           throw new Error(
-            "No 'from' phone number configured. Set channels.sms.defaultFrom or specify 'from' in the SMS template.",
+            "No 'from' phone number configured. Set channels.sms.defaultFrom, configure a senderResolver, or specify 'from' in the SMS template.",
           );
         }
 
@@ -613,6 +687,7 @@ export class Notifications {
             : "failed";
 
       await ctx.runMutation(this.component.delivery.createDeliveryLog, {
+        tenantId,
         notificationId,
         channel,
         status,
@@ -633,6 +708,7 @@ export class Notifications {
 
       // Create failed delivery log entry
       await ctx.runMutation(this.component.delivery.createDeliveryLog, {
+        tenantId,
         notificationId,
         channel,
         status: "failed",
