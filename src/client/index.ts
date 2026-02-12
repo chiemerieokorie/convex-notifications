@@ -308,6 +308,12 @@ export class Notifications {
       : definition.event;
     const body = inboxTemplate ? inboxTemplate.body(data) : "";
 
+    // Scope deduplication key to tenant (consistent with send())
+    const scopedDeduplicationKey =
+      args.deduplicationKey && args.tenantId
+        ? `${args.tenantId}:${args.deduplicationKey}`
+        : args.deduplicationKey;
+
     const scheduledNotificationId = await ctx.runMutation(
       this.component.scheduled.scheduleNotification,
       {
@@ -321,7 +327,7 @@ export class Notifications {
         channels: definition.channels,
         scheduledFor,
         transactional: args.transactional,
-        deduplicationKey: args.deduplicationKey,
+        deduplicationKey: scopedDeduplicationKey,
       },
     );
 

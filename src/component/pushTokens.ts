@@ -83,10 +83,17 @@ export const deletePushToken = internalMutation({
   },
   returns: v.boolean(),
   handler: async (ctx, args) => {
-    const existing = await ctx.db
-      .query("pushTokens")
-      .withIndex("by_token", (q) => q.eq("token", args.token))
-      .first();
+    const existing = args.tenantId !== undefined
+      ? await ctx.db
+          .query("pushTokens")
+          .withIndex("by_tenantId_token", (q) =>
+            q.eq("tenantId", args.tenantId).eq("token", args.token),
+          )
+          .first()
+      : await ctx.db
+          .query("pushTokens")
+          .withIndex("by_token", (q) => q.eq("token", args.token))
+          .first();
 
     if (!existing || existing.userId !== args.userId) {
       return false;

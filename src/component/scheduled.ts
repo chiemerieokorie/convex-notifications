@@ -148,6 +148,10 @@ export const cancelScheduledNotification = internalMutation({
     if (!notification || notification.userId !== args.userId) {
       return false;
     }
+    // Cross-check tenantId for multi-tenant isolation
+    if (args.tenantId !== undefined && notification.tenantId !== args.tenantId) {
+      return false;
+    }
 
     // Can only cancel pending notifications
     if (notification.status !== "pending") {

@@ -77,6 +77,10 @@ export const markRead = internalMutation({
     if (!notification || notification.userId !== args.userId) {
       throw new Error("Notification not found");
     }
+    // Cross-check tenantId for multi-tenant isolation
+    if (args.tenantId !== undefined && notification.tenantId !== args.tenantId) {
+      throw new Error("Notification not found");
+    }
     await ctx.db.patch(args.notificationId, { readAt: Date.now() });
 
     // Cancel any pending fallbacks for this notification
@@ -144,6 +148,10 @@ export const archive = internalMutation({
   handler: async (ctx, args) => {
     const notification = await ctx.db.get(args.notificationId);
     if (!notification || notification.userId !== args.userId) {
+      throw new Error("Notification not found");
+    }
+    // Cross-check tenantId for multi-tenant isolation
+    if (args.tenantId !== undefined && notification.tenantId !== args.tenantId) {
       throw new Error("Notification not found");
     }
     await ctx.db.patch(args.notificationId, { archivedAt: Date.now() });
