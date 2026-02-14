@@ -15,6 +15,7 @@ import { internalMutation, internalQuery } from "./_generated/server.js";
  */
 export const scheduleNotification = internalMutation({
   args: {
+    tenantId: v.optional(v.string()),
     userId: v.string(),
     event: v.string(),
     category: v.optional(v.string()),
@@ -35,6 +36,7 @@ export const scheduleNotification = internalMutation({
     }
 
     return await ctx.db.insert("scheduledNotifications", {
+      tenantId: args.tenantId,
       userId: args.userId,
       event: args.event,
       category: args.category,
@@ -134,6 +136,7 @@ export const markScheduledFailed = internalMutation({
  */
 export const cancelScheduledNotification = internalMutation({
   args: {
+    tenantId: v.optional(v.string()),
     id: v.id("scheduledNotifications"),
     userId: v.string(), // For permission check
   },
@@ -143,6 +146,10 @@ export const cancelScheduledNotification = internalMutation({
 
     // Permission check
     if (!notification || notification.userId !== args.userId) {
+      return false;
+    }
+    // Cross-check tenantId for multi-tenant isolation
+    if (args.tenantId !== undefined && notification.tenantId !== args.tenantId) {
       return false;
     }
 
@@ -164,6 +171,7 @@ export const cancelScheduledNotification = internalMutation({
  */
 export const getScheduledNotifications = internalQuery({
   args: {
+    tenantId: v.optional(v.string()),
     userId: v.string(),
     status: v.optional(
       v.union(

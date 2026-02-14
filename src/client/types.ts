@@ -57,19 +57,31 @@ export type ChannelConfig = {
   sms?: SmsChannelConfig;
 };
 
+/**
+ * The identity returned by the auth function.
+ * For single-tenant apps, can return just a userId string (backwards compatible).
+ * For multi-tenant apps, return an object with userId and tenantId.
+ */
+export type AuthIdentity = string | { userId: string; tenantId: string };
+
 // Notification options
 export type NotificationsOptions = {
   /**
-   * Function to get the authenticated user ID from the context.
+   * Function to get the authenticated user identity from the context.
    * Called for all inbox-related operations.
+   *
+   * For single-tenant apps, return a userId string.
+   * For multi-tenant apps, return `{ userId, tenantId }`.
    */
-  auth: (ctx: { auth: Auth }) => Promise<string>;
+  auth: (ctx: { auth: Auth }) => Promise<AuthIdentity>;
 
   /**
    * Channel-specific configuration.
    * Configure this to enable delivery through each channel.
+   *
+   * Can be a static config or a function that resolves config per tenant.
    */
-  channels?: ChannelConfig;
+  channels?: ChannelConfig | ((tenantId: string) => ChannelConfig | Promise<ChannelConfig>);
 
   /**
    * Resolvers for getting user contact information.
@@ -81,19 +93,47 @@ export type NotificationsOptions = {
      * Resolve email address for a user.
      * Return null if the user has no email.
      */
-    email?: (ctx: RunMutationCtx, userId: string) => Promise<string | null>;
+    email?: (ctx: RunMutationCtx, userId: string, tenantId?: string) => Promise<string | null>;
     /**
      * Resolve phone number for a user (E.164 format, e.g., +14155551234).
      * Return null if the user has no phone.
      */
-    phone?: (ctx: RunMutationCtx, userId: string) => Promise<string | null>;
+    phone?: (ctx: RunMutationCtx, userId: string, tenantId?: string) => Promise<string | null>;
     /**
      * Resolve Expo push token for a user.
      * Return null if the user has no push token registered.
      * Note: If using the expo-push-notifications component, tokens are
      * managed internally and this resolver may not be needed.
      */
-    pushToken?: (ctx: RunMutationCtx, userId: string) => Promise<string | null>;
+    pushToken?: (ctx: RunMutationCtx, userId: string, tenantId?: string) => Promise<string | null>;
+  };
+
+  /**
+   * Dynamic sender identity resolvers.
+   * Called at send time to resolve the "from" address per tenant.
+   * Takes priority over static channel config defaults.
+   *
+   * Use this when tenants have their own phone numbers, email domains, etc.
+   *
+   * @example
+   * ```ts
+   * senderResolvers: {
+   *   email: async (ctx, tenantId) => {
+   *     const tenant = await ctx.db.get(tenantId);
+   *     return `notifications@${tenant.domain}`;
+   *   },
+   *   sms: async (ctx, tenantId) => {
+   *     const tenant = await ctx.db.get(tenantId);
+   *     return tenant.twilioPhoneNumber;
+   *   },
+   * }
+   * ```
+   */
+  senderResolvers?: {
+    /** Resolve the "from" email address for a tenant. */
+    email?: (ctx: RunMutationCtx, tenantId: string) => Promise<string>;
+    /** Resolve the "from" phone number for a tenant (E.164 format). */
+    sms?: (ctx: RunMutationCtx, tenantId: string) => Promise<string>;
   };
 
   /**

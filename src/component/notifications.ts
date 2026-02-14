@@ -3,6 +3,7 @@ import { internalMutation, internalQuery } from "./_generated/server.js";
 
 export const createNotification = internalMutation({
   args: {
+    tenantId: v.optional(v.string()),
     userId: v.string(),
     event: v.string(),
     title: v.string(),
@@ -13,6 +14,7 @@ export const createNotification = internalMutation({
   returns: v.id("notifications"),
   handler: async (ctx, args) => {
     return await ctx.db.insert("notifications", {
+      tenantId: args.tenantId,
       userId: args.userId,
       event: args.event,
       title: args.title,
@@ -139,7 +141,8 @@ export const processScheduledNotifications = internalMutation({
         }
 
         // Create the notification in inbox
-        const notificationId = await ctx.db.insert("notifications", {
+        await ctx.db.insert("notifications", {
+          tenantId: scheduled.tenantId,
           userId: scheduled.userId,
           event: scheduled.event,
           title: scheduled.title,

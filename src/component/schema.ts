@@ -3,6 +3,7 @@ import { v } from "convex/values";
 
 export default defineSchema({
   notifications: defineTable({
+    tenantId: v.optional(v.string()),
     userId: v.string(),
     event: v.string(),
     title: v.string(),
@@ -13,9 +14,12 @@ export default defineSchema({
     transactional: v.optional(v.boolean()),
   })
     .index("by_userId", ["userId", "_creationTime"])
-    .index("by_userId_unread", ["userId", "readAt"]),
+    .index("by_userId_unread", ["userId", "readAt"])
+    .index("by_tenantId_userId", ["tenantId", "userId", "_creationTime"])
+    .index("by_tenantId_userId_unread", ["tenantId", "userId", "readAt"]),
 
   preferences: defineTable({
+    tenantId: v.optional(v.string()),
     userId: v.string(),
     level: v.union(
       v.literal("global"),
@@ -27,7 +31,9 @@ export default defineSchema({
     enabled: v.boolean(),
   })
     .index("by_userId", ["userId"])
-    .index("by_userId_level_key", ["userId", "level", "key"]),
+    .index("by_userId_level_key", ["userId", "level", "key"])
+    .index("by_tenantId_userId", ["tenantId", "userId"])
+    .index("by_tenantId_userId_level_key", ["tenantId", "userId", "level", "key"]),
 
   deduplication: defineTable({
     key: v.string(),
@@ -37,6 +43,7 @@ export default defineSchema({
     .index("by_expiresAt", ["expiresAt"]),
 
   deliveryLog: defineTable({
+    tenantId: v.optional(v.string()),
     notificationId: v.id("notifications"),
     channel: v.string(),
     status: v.union(
@@ -56,19 +63,23 @@ export default defineSchema({
     .index("by_externalId", ["externalId"]),
 
   pushTokens: defineTable({
+    tenantId: v.optional(v.string()),
     userId: v.string(),
     token: v.string(),
     platform: v.optional(v.union(v.literal("ios"), v.literal("android"), v.literal("web"))),
     deviceId: v.optional(v.string()),
   })
     .index("by_userId", ["userId"])
-    .index("by_token", ["token"]),
+    .index("by_token", ["token"])
+    .index("by_tenantId_userId", ["tenantId", "userId"])
+    .index("by_tenantId_token", ["tenantId", "token"]),
 
   /**
    * Scheduled notifications waiting to be sent.
    * Processed by a cron job that dispatches them when scheduledFor time is reached.
    */
   scheduledNotifications: defineTable({
+    tenantId: v.optional(v.string()),
     userId: v.string(),
     event: v.string(),
     category: v.optional(v.string()),
