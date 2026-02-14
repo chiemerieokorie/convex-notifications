@@ -1,3 +1,20 @@
+## [1.5.0](https://github.com/chiemerieokorie/convex-notifications/compare/v1.4.0...v1.5.0) (2026-02-14)
+
+### Features
+
+* add multi-tenant support with dynamic sender identity resolution ([fa96cfe](https://github.com/chiemerieokorie/convex-notifications/commit/fa96cfec7a905e8f0b9bd20ff10bb4b9a435590f))
+* add tests, webhook router, and channel fallback feature ([9a3ffed](https://github.com/chiemerieokorie/convex-notifications/commit/9a3ffed08b184295b3168fd6f2876e9e9496ad47))
+* implement full notification component with all features ([a7d43c7](https://github.com/chiemerieokorie/convex-notifications/commit/a7d43c75835cb9de1ee3b059e63a6430654f1c68))
+
+### Bug Fixes
+
+* add vitest aliases so example tests resolve source files ([30500ca](https://github.com/chiemerieokorie/convex-notifications/commit/30500cae1ad613cfab6bd5dee85a822940d2c8c7))
+* address PR review issues - security, performance, and correctness ([e616587](https://github.com/chiemerieokorie/convex-notifications/commit/e6165872d3ac1748f091b64f5108cc0a2fc58458))
+* resolve lint errors - unused imports, unused var, conditional hooks ([5e8cb8d](https://github.com/chiemerieokorie/convex-notifications/commit/5e8cb8dce55d71072074e1b9e120d95ef67d06ba))
+* resolve TypeScript errors and consolidate processor functions ([fc90358](https://github.com/chiemerieokorie/convex-notifications/commit/fc90358015f4f3a70e408a66ede544f95fa9ef6e))
+* tenant isolation checks and dedup key scoping bugs ([e935fec](https://github.com/chiemerieokorie/convex-notifications/commit/e935fec1b478e8044b327d6bcaca3793991b14a8))
+* update generated component types with tenantId and fix resend webhook type error ([02a24fd](https://github.com/chiemerieokorie/convex-notifications/commit/02a24fd04d4284194690d5a114b193529793560a))
+
 ## [1.4.0](https://github.com/chiemerieokorie/convex-notifications/compare/v1.3.0...v1.4.0) (2026-02-04)
 
 ### Features
