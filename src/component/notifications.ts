@@ -141,7 +141,7 @@ export const processScheduledNotifications = internalMutation({
         }
 
         // Create the notification in inbox
-        const notificationId = await ctx.db.insert("notifications", {
+        await ctx.db.insert("notifications", {
           tenantId: scheduled.tenantId,
           userId: scheduled.userId,
           event: scheduled.event,

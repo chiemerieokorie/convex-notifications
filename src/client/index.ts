@@ -1,9 +1,3 @@
-import type {
-  Auth,
-  FunctionReference,
-  FunctionArgs,
-  FunctionReturnType,
-} from "convex/server";
 import { queryGeneric, mutationGeneric } from "convex/server";
 import { v } from "convex/values";
 import type { ComponentApi } from "../component/_generated/component.js";

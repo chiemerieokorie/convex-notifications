@@ -71,21 +71,6 @@ export function NotificationsProvider({
 }
 
 /**
- * Get the notifications API from context.
- * Throws if used outside of NotificationsProvider.
- */
-function useNotificationsContext() {
-  const context = useContext(NotificationsContext);
-  if (!context) {
-    throw new Error(
-      "useNotifications must be used within a NotificationsProvider. " +
-      "Wrap your app with <NotificationsProvider api={api.notifications}>."
-    );
-  }
-  return context;
-}
-
-/**
  * Hook to access paginated notifications list.
  *
  * Can be used with or without the provider:
@@ -116,16 +101,12 @@ export function useNotifications(
   listFn?: AnyQueryRef,
   opts?: { initialNumItems?: number },
 ) {
-  // Try to get from context if no function provided
-  let fn = listFn;
+  const context = useContext(NotificationsContext);
+  const fn = listFn ?? context?.api.list;
   if (!fn) {
-    const context = useContext(NotificationsContext);
-    if (!context) {
-      throw new Error(
-        "useNotifications requires either a list function argument or NotificationsProvider context"
-      );
-    }
-    fn = context.api.list;
+    throw new Error(
+      "useNotifications requires either a list function argument or NotificationsProvider context"
+    );
   }
 
   const result = usePaginatedQuery(fn, {}, {
@@ -154,15 +135,12 @@ export function useNotifications(
  * ```
  */
 export function useUnreadCount(countFn?: AnyQueryRef): number {
-  let fn = countFn;
+  const context = useContext(NotificationsContext);
+  const fn = countFn ?? context?.api.unreadCount;
   if (!fn) {
-    const context = useContext(NotificationsContext);
-    if (!context) {
-      throw new Error(
-        "useUnreadCount requires either a count function argument or NotificationsProvider context"
-      );
-    }
-    fn = context.api.unreadCount;
+    throw new Error(
+      "useUnreadCount requires either a count function argument or NotificationsProvider context"
+    );
   }
 
   return useQuery(fn, {}) ?? 0;
@@ -188,15 +166,12 @@ export function useUnreadCount(countFn?: AnyQueryRef): number {
  * ```
  */
 export function usePreferences(prefsFn?: AnyQueryRef) {
-  let fn = prefsFn;
+  const context = useContext(NotificationsContext);
+  const fn = prefsFn ?? context?.api.getPreferences;
   if (!fn) {
-    const context = useContext(NotificationsContext);
-    if (!context) {
-      throw new Error(
-        "usePreferences requires either a preferences function argument or NotificationsProvider context"
-      );
-    }
-    fn = context.api.getPreferences;
+    throw new Error(
+      "usePreferences requires either a preferences function argument or NotificationsProvider context"
+    );
   }
 
   return useQuery(fn, {}) ?? [];
@@ -218,15 +193,12 @@ export function usePreferences(prefsFn?: AnyQueryRef) {
  * ```
  */
 export function usePushTokens(tokensFn?: AnyQueryRef) {
-  let fn = tokensFn;
+  const context = useContext(NotificationsContext);
+  const fn = tokensFn ?? context?.api.getPushTokens;
   if (!fn) {
-    const context = useContext(NotificationsContext);
-    if (!context?.api.getPushTokens) {
-      throw new Error(
-        "usePushTokens requires either a getPushTokens function argument or NotificationsProvider context with getPushTokens"
-      );
-    }
-    fn = context.api.getPushTokens;
+    throw new Error(
+      "usePushTokens requires either a getPushTokens function argument or NotificationsProvider context with getPushTokens"
+    );
   }
 
   return useQuery(fn, {}) ?? [];
@@ -253,15 +225,12 @@ export function useDeliveryLogs(
   notificationId: string,
   logsFn?: AnyQueryRef,
 ) {
-  let fn = logsFn;
+  const context = useContext(NotificationsContext);
+  const fn = logsFn ?? context?.api.getDeliveryLogs;
   if (!fn) {
-    const context = useContext(NotificationsContext);
-    if (!context?.api.getDeliveryLogs) {
-      throw new Error(
-        "useDeliveryLogs requires either a getDeliveryLogs function argument or NotificationsProvider context with getDeliveryLogs"
-      );
-    }
-    fn = context.api.getDeliveryLogs;
+    throw new Error(
+      "useDeliveryLogs requires either a getDeliveryLogs function argument or NotificationsProvider context with getDeliveryLogs"
+    );
   }
 
   return useQuery(fn, { notificationId }) ?? [];
