@@ -18,6 +18,7 @@ export type ComponentApi<
       "mutation",
       "internal",
       {
+        tenantId?: string;
         channel: string;
         metadata?: any;
         notificationId: string;
@@ -50,35 +51,35 @@ export type ComponentApi<
     archive: FunctionReference<
       "mutation",
       "internal",
-      { notificationId: string; userId: string },
+      { tenantId?: string; notificationId: string; userId: string },
       null,
       Name
     >;
     list: FunctionReference<
       "query",
       "internal",
-      { cursor?: number; limit?: number; userId: string },
+      { tenantId?: string; cursor?: number; limit?: number; userId: string },
       { cursor: number | null; notifications: any[] },
       Name
     >;
     markAllRead: FunctionReference<
       "mutation",
       "internal",
-      { userId: string },
+      { tenantId?: string; userId: string },
       null,
       Name
     >;
     markRead: FunctionReference<
       "mutation",
       "internal",
-      { notificationId: string; userId: string },
+      { tenantId?: string; notificationId: string; userId: string },
       null,
       Name
     >;
     unreadCount: FunctionReference<
       "query",
       "internal",
-      { userId: string },
+      { tenantId?: string; userId: string },
       number,
       Name
     >;
@@ -95,6 +96,7 @@ export type ComponentApi<
       "mutation",
       "internal",
       {
+        tenantId?: string;
         body: string;
         data?: any;
         event: string;
@@ -117,7 +119,7 @@ export type ComponentApi<
     getPreferences: FunctionReference<
       "query",
       "internal",
-      { userId: string },
+      { tenantId?: string; userId: string },
       any[],
       Name
     >;
@@ -125,6 +127,7 @@ export type ComponentApi<
       "query",
       "internal",
       {
+        tenantId?: string;
         category?: string;
         channels: string[];
         event: string;
@@ -137,6 +140,7 @@ export type ComponentApi<
       "mutation",
       "internal",
       {
+        tenantId?: string;
         channel: string;
         enabled: boolean;
         key?: string;
@@ -152,6 +156,7 @@ export type ComponentApi<
       "mutation",
       "internal",
       {
+        tenantId?: string;
         userId: string;
         token: string;
         platform?: "ios" | "android" | "web";
@@ -163,10 +168,11 @@ export type ComponentApi<
     getPushTokens: FunctionReference<
       "query",
       "internal",
-      { userId: string },
+      { tenantId?: string; userId: string },
       Array<{
         _id: string;
         _creationTime: number;
+        tenantId?: string;
         userId: string;
         token: string;
         platform?: "ios" | "android" | "web";
@@ -177,7 +183,7 @@ export type ComponentApi<
     deletePushToken: FunctionReference<
       "mutation",
       "internal",
-      { userId: string; token: string },
+      { tenantId?: string; userId: string; token: string },
       boolean,
       Name
     >;
@@ -187,6 +193,7 @@ export type ComponentApi<
       "mutation",
       "internal",
       {
+        tenantId?: string;
         userId: string;
         event: string;
         category?: string;
@@ -204,7 +211,7 @@ export type ComponentApi<
     cancelScheduledNotification: FunctionReference<
       "mutation",
       "internal",
-      { id: string; userId: string },
+      { tenantId?: string; id: string; userId: string },
       boolean,
       Name
     >;
@@ -212,6 +219,7 @@ export type ComponentApi<
       "query",
       "internal",
       {
+        tenantId?: string;
         userId: string;
         status?: "pending" | "processing" | "sent" | "failed" | "cancelled";
       },
