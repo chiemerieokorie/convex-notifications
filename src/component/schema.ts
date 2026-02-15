@@ -13,9 +13,9 @@ export default defineSchema({
     archivedAt: v.optional(v.number()),
     transactional: v.optional(v.boolean()),
   })
-    .index("by_userId", ["userId", "_creationTime"])
+    .index("by_userId", ["userId"])
     .index("by_userId_unread", ["userId", "readAt"])
-    .index("by_tenantId_userId", ["tenantId", "userId", "_creationTime"])
+    .index("by_tenantId_userId", ["tenantId", "userId"])
     .index("by_tenantId_userId_unread", ["tenantId", "userId", "readAt"]),
 
   preferences: defineTable({
