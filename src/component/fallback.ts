@@ -10,6 +10,7 @@
 
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server.js";
+import { fallbackQueueValidator } from "./validators.js";
 
 /**
  * Queue a notification for channel fallback.
@@ -84,7 +85,7 @@ export const getPendingFallbacks = internalQuery({
   args: {
     batchSize: v.optional(v.number()),
   },
-  returns: v.array(v.any()),
+  returns: v.array(fallbackQueueValidator),
   handler: async (ctx, args) => {
     const batchSize = args.batchSize ?? 50;
     const now = Date.now();
@@ -170,7 +171,7 @@ export const getFallbackStatus = internalQuery({
   args: {
     notificationId: v.id("notifications"),
   },
-  returns: v.array(v.any()),
+  returns: v.array(fallbackQueueValidator),
   handler: async (ctx, args) => {
     return await ctx.db
       .query("fallbackQueue")
@@ -203,7 +204,7 @@ export const getTriggeredFallbacks = internalQuery({
 
     const triggered = await ctx.db
       .query("fallbackQueue")
-      .filter((q) => q.eq(q.field("status"), "triggered"))
+      .withIndex("by_status_fallbackAt", (q) => q.eq("status", "triggered"))
       .take(batchSize);
 
     return triggered.map((f) => ({

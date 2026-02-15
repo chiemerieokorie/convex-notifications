@@ -193,9 +193,9 @@ describe("client integration", () => {
     });
     expect(result.notificationId).toBeDefined();
 
-    const listResult = await t.query(testApi.list, {});
-    expect(listResult.notifications).toHaveLength(1);
-    expect(listResult.notifications[0].body).toBe("Hello, world!");
+    const listResult = await t.query(testApi.list, { paginationOpts: { numItems: 20, cursor: null } });
+    expect(listResult.page).toHaveLength(1);
+    expect(listResult.page[0].body).toBe("Hello, world!");
   });
 
   test("unread count decreases after markRead", async () => {
@@ -240,8 +240,8 @@ describe("client integration", () => {
 
     await t.mutation(testApi.archive, { notificationId: sendResult.notificationId });
 
-    const result = await t.query(testApi.list, {});
-    expect(result.notifications).toHaveLength(0);
+    const result = await t.query(testApi.list, { paginationOpts: { numItems: 20, cursor: null } });
+    expect(result.page).toHaveLength(0);
   });
 
   test("preferences CRUD", async () => {
@@ -301,8 +301,8 @@ describe("client integration", () => {
     expect(result.notificationId).toBeDefined();
 
     // Notification was still created in inbox
-    const listResult = await t.query(testApi.list, {});
-    expect(listResult.notifications).toHaveLength(1);
+    const listResult = await t.query(testApi.list, { paginationOpts: { numItems: 20, cursor: null } });
+    expect(listResult.page).toHaveLength(1);
   });
 
   test("registerPushToken registers a new token", async () => {
@@ -424,10 +424,10 @@ describe("client integration", () => {
     expect(result.notificationId).toBeDefined();
 
     // Notification should be in inbox with rendered title
-    const listResult = await t.query(testApi.list, {});
-    expect(listResult.notifications).toHaveLength(1);
-    expect(listResult.notifications[0].title).toBe("Welcome, Alice!");
-    expect(listResult.notifications[0].body).toBe("Thanks for joining.");
+    const listResult = await t.query(testApi.list, { paginationOpts: { numItems: 20, cursor: null } });
+    expect(listResult.page).toHaveLength(1);
+    expect(listResult.page[0].title).toBe("Welcome, Alice!");
+    expect(listResult.page[0].body).toBe("Thanks for joining.");
   });
 
   test("email with async html field renders correctly", async () => {
@@ -440,8 +440,8 @@ describe("client integration", () => {
     expect(result.notificationId).toBeDefined();
 
     // Notification should be in inbox
-    const listResult = await t.query(testApi.list, {});
-    expect(listResult.notifications).toHaveLength(1);
-    expect(listResult.notifications[0].title).toBe("Hello, Bob");
+    const listResult = await t.query(testApi.list, { paginationOpts: { numItems: 20, cursor: null } });
+    expect(listResult.page).toHaveLength(1);
+    expect(listResult.page[0].title).toBe("Hello, Bob");
   });
 });

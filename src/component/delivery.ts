@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server.js";
+import { deliveryLogValidator } from "./validators.js";
 
 const statusValidator = v.union(
   v.literal("pending"),
@@ -46,18 +47,6 @@ export const updateDeliveryStatus = internalMutation({
     });
     return null;
   },
-});
-
-const deliveryLogValidator = v.object({
-  _id: v.id("deliveryLog"),
-  _creationTime: v.number(),
-  notificationId: v.id("notifications"),
-  channel: v.string(),
-  status: statusValidator,
-  error: v.optional(v.string()),
-  sentAt: v.optional(v.number()),
-  metadata: v.optional(v.any()),
-  externalId: v.optional(v.string()),
 });
 
 export const getDeliveryLogs = internalQuery({
@@ -109,12 +98,16 @@ export const updateDeliveryFromWebhook = internalMutation({
       (args.status === "sent" || args.status === "delivered") && !log.sentAt;
 
     // Update the delivery log
+    const existingMetadata =
+      log.metadata != null && typeof log.metadata === "object" && !Array.isArray(log.metadata)
+        ? (log.metadata as Record<string, unknown>)
+        : {};
     await ctx.db.patch(log._id, {
       status: args.status,
       error: args.error,
       ...(shouldSetSentAt ? { sentAt: Date.now() } : {}),
       metadata: {
-        ...(log.metadata as object),
+        ...existingMetadata,
         webhookData: args.webhookData,
         webhookReceivedAt: Date.now(),
       },

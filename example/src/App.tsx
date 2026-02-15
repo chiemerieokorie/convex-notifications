@@ -1,14 +1,16 @@
-import { useMutation, useQuery } from "convex/react";
+import { useMutation, useQuery, usePaginatedQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 
 function NotificationBell() {
-  const result = useQuery(api.example.list, {});
+  const { results: notifications, loadMore, status } = usePaginatedQuery(
+    api.example.list,
+    {},
+    { initialNumItems: 20 },
+  );
   const unreadCount = useQuery(api.example.unreadCount, {});
   const markRead = useMutation(api.example.markRead);
   const markAllRead = useMutation(api.example.markAllRead);
   const archiveNotification = useMutation(api.example.archive);
-
-  const notifications = result?.notifications ?? [];
 
   return (
     <div style={{ border: "1px solid #ccc", padding: "1rem", borderRadius: "8px" }}>
@@ -48,6 +50,9 @@ function NotificationBell() {
           <li style={{ color: "#888", fontStyle: "italic" }}>No notifications.</li>
         )}
       </ul>
+      {status === "CanLoadMore" && (
+        <button onClick={() => loadMore(20)}>Load more</button>
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { queryGeneric, mutationGeneric } from "convex/server";
+import { queryGeneric, mutationGeneric, paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 import type { ComponentApi } from "../component/_generated/component.js";
 import type {
@@ -157,13 +157,13 @@ export class Notifications {
 
   async list(
     ctx: RunQueryCtx,
-    opts?: { limit?: number; cursor?: number },
+    paginationOpts: { numItems: number; cursor: string | null },
   ) {
     const { userId, tenantId } = await this.resolveAuth(ctx);
     return await ctx.runQuery(this.component.inbox.list, {
       tenantId,
       userId,
-      ...opts,
+      paginationOpts,
     });
   }
 
@@ -342,7 +342,9 @@ export class Notifications {
       this.component.scheduled.cancelScheduledNotification,
       {
         tenantId,
-        id: scheduledNotificationId as any,
+        // scheduledNotificationId is a string returned by the component;
+        // Convex component IDs are serialized as strings across the boundary.
+        id: scheduledNotificationId as unknown as import("convex/values").GenericId<"scheduledNotifications">,
         userId,
       },
     );
@@ -387,14 +389,14 @@ export class Notifications {
     const tenantId = args.tenantId;
     const deliveries: DeliveryResult[] = [];
 
-    // 1. Check deduplication (scope key to tenant if provided)
+    // 1. Check deduplication atomically (scope key to tenant if provided)
     if (args.deduplicationKey) {
       const scopedKey = tenantId
         ? `${tenantId}:${args.deduplicationKey}`
         : args.deduplicationKey;
-      const isDuplicate = await ctx.runQuery(
-        this.component.notifications.checkDeduplication,
-        { key: scopedKey },
+      const isDuplicate = await ctx.runMutation(
+        this.component.notifications.checkAndRecordDeduplication,
+        { key: scopedKey, ttlSeconds: args.deduplicationTtlSeconds ?? 86400 },
       );
       if (isDuplicate) {
         throw new Error(
@@ -423,19 +425,7 @@ export class Notifications {
       },
     );
 
-    // 3. Record deduplication key
-    if (args.deduplicationKey) {
-      const scopedKey = tenantId
-        ? `${tenantId}:${args.deduplicationKey}`
-        : args.deduplicationKey;
-      await ctx.runMutation(
-        this.component.notifications.recordDeduplication,
-        {
-          key: scopedKey,
-          ttlSeconds: args.deduplicationTtlSeconds ?? 86400,
-        },
-      );
-    }
+    // 3. Deduplication key already recorded atomically in step 1
 
     // 4. Resolve enabled channels
     const definedChannels = Object.keys(definition.channels);
@@ -772,17 +762,22 @@ export class Notifications {
       /**
        * List notifications for the current user (paginated)
        */
+      /**
+       * List notifications for the current user (paginated).
+       * Uses standard Convex pagination via convex-helpers paginator.
+       * Compatible with usePaginatedQuery on the client.
+       */
       list: queryGeneric({
         args: {
-          limit: v.optional(v.number()),
-          cursor: v.optional(v.number()),
+          paginationOpts: paginationOptsValidator,
         },
         returns: v.object({
-          notifications: v.array(v.any()),
-          cursor: v.union(v.number(), v.null()),
+          page: v.array(v.any()),
+          isDone: v.boolean(),
+          continueCursor: v.string(),
         }),
-        handler: (ctx: RunQueryCtx, args: { limit?: number; cursor?: number }) =>
-          self.list(ctx, args),
+        handler: (ctx: RunQueryCtx, args: { paginationOpts: { numItems: number; cursor: string | null } }) =>
+          self.list(ctx, args.paginationOpts),
       }),
 
       /**

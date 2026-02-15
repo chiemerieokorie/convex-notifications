@@ -53,6 +53,36 @@ export const recordDeduplication = internalMutation({
 });
 
 /**
+ * Atomically check and record a deduplication key in a single mutation.
+ * This prevents TOCTOU race conditions when check and record are separate
+ * transactions (e.g., when send() is called from an action context).
+ *
+ * Returns true if the key was already present (duplicate), false if newly recorded.
+ */
+export const checkAndRecordDeduplication = internalMutation({
+  args: {
+    key: v.string(),
+    ttlSeconds: v.number(),
+  },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const entry = await ctx.db
+      .query("deduplication")
+      .withIndex("by_key", (q) => q.eq("key", args.key))
+      .first();
+    if (entry && entry.expiresAt > Date.now()) {
+      return true; // Duplicate
+    }
+    // Record the key atomically
+    await ctx.db.insert("deduplication", {
+      key: args.key,
+      expiresAt: Date.now() + args.ttlSeconds * 1000,
+    });
+    return false; // Not a duplicate
+  },
+});
+
+/**
  * Clean up expired deduplication keys.
  * This is called by a cron job to prevent the table from growing indefinitely.
  */

@@ -146,10 +146,10 @@ describe("scheduled notifications", () => {
     // Verify notification was created in inbox
     const notifications = await t.query(internal.inbox.list, {
       userId: "user1",
-      limit: 10,
+      paginationOpts: { numItems: 10, cursor: null },
     });
-    expect(notifications.notifications).toHaveLength(1);
-    expect(notifications.notifications[0].title).toBe("Scheduled Title");
+    expect(notifications.page).toHaveLength(1);
+    expect(notifications.page[0].title).toBe("Scheduled Title");
   });
 
   test("processScheduledNotifications respects deduplication", async () => {
@@ -190,9 +190,9 @@ describe("scheduled notifications", () => {
     // Verify no notification was created
     const notifications = await t.query(internal.inbox.list, {
       userId: "user1",
-      limit: 10,
+      paginationOpts: { numItems: 10, cursor: null },
     });
-    expect(notifications.notifications).toHaveLength(0);
+    expect(notifications.page).toHaveLength(0);
   });
 
   test("getScheduledNotifications filters by status", async () => {

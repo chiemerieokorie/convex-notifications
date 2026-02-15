@@ -73,6 +73,9 @@ export function NotificationsProvider({
 /**
  * Hook to access paginated notifications list.
  *
+ * Uses Convex's built-in `usePaginatedQuery` for reactive pagination,
+ * backed by `convex-helpers/server/pagination` paginator on the server.
+ *
  * Can be used with or without the provider:
  * - With provider: `useNotifications()` (no args needed)
  * - Without provider: `useNotifications(api.notifications.list)`

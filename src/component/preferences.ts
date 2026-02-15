@@ -1,12 +1,13 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server.js";
+import { preferenceValidator } from "./validators.js";
 
 export const getPreferences = internalQuery({
   args: {
     tenantId: v.optional(v.string()),
     userId: v.string(),
   },
-  returns: v.array(v.any()),
+  returns: v.array(preferenceValidator),
   handler: async (ctx, args) => {
     const q = args.tenantId !== undefined
       ? ctx.db
