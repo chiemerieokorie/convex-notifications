@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server.js";
-import { deliveryLogValidator } from "./validators.js";
+import { channelNameValidator, deliveryLogValidator } from "./validators.js";
 
 const statusValidator = v.union(
   v.literal("pending"),
@@ -13,7 +13,7 @@ export const createDeliveryLog = internalMutation({
   args: {
     tenantId: v.optional(v.string()),
     notificationId: v.id("notifications"),
-    channel: v.string(),
+    channel: channelNameValidator,
     status: statusValidator,
     metadata: v.optional(v.any()),
     externalId: v.optional(v.string()),
@@ -69,7 +69,7 @@ export const getDeliveryLogs = internalQuery({
 export const updateDeliveryFromWebhook = internalMutation({
   args: {
     externalId: v.string(),
-    channel: v.string(),
+    channel: channelNameValidator,
     status: statusValidator,
     error: v.optional(v.string()),
     webhookData: v.optional(v.any()),

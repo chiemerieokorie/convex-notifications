@@ -91,7 +91,7 @@ function PreferencesPanel() {
     <div style={{ border: "1px solid #ccc", padding: "1rem", borderRadius: "8px", marginTop: "1rem" }}>
       <h3>Preferences</h3>
       <div style={{ display: "flex", gap: "1rem" }}>
-        {["email", "push", "sms"].map((channel) => {
+        {(["email", "push", "sms"] as const).map((channel) => {
           const pref = (preferences ?? []).find(
             (p: any) => p.level === "global" && p.channel === channel,
           );

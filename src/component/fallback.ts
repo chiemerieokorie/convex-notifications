@@ -10,7 +10,7 @@
 
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server.js";
-import { fallbackQueueValidator } from "./validators.js";
+import { channelNameValidator, fallbackQueueValidator } from "./validators.js";
 
 /**
  * Queue a notification for channel fallback.
@@ -31,8 +31,8 @@ export const queueFallback = internalMutation({
   args: {
     notificationId: v.id("notifications"),
     userId: v.string(),
-    fromChannel: v.string(),
-    toChannel: v.string(),
+    fromChannel: channelNameValidator,
+    toChannel: channelNameValidator,
     delayMs: v.number(),
   },
   returns: v.id("fallbackQueue"),
@@ -195,8 +195,8 @@ export const getTriggeredFallbacks = internalQuery({
       _id: v.id("fallbackQueue"),
       notificationId: v.id("notifications"),
       userId: v.string(),
-      fromChannel: v.string(),
-      toChannel: v.string(),
+      fromChannel: channelNameValidator,
+      toChannel: channelNameValidator,
     }),
   ),
   handler: async (ctx, args) => {

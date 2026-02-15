@@ -19,6 +19,9 @@ export type RunActionCtx = {
   auth: Auth;
 };
 
+// Channel names
+export type ChannelName = "inbox" | "email" | "push" | "sms";
+
 // Channel configuration
 export type EmailChannelConfig = {
   /**
@@ -198,7 +201,7 @@ export type NotificationDefinition<T> = {
 
 // Delivery result types
 export type DeliveryResult = {
-  channel: string;
+  channel: ChannelName;
   status: "sent" | "failed" | "skipped";
   error?: string;
   externalId?: string;

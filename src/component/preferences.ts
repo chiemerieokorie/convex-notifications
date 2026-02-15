@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server.js";
-import { preferenceValidator } from "./validators.js";
+import { channelNameValidator, preferenceValidator } from "./validators.js";
 
 export const getPreferences = internalQuery({
   args: {
@@ -32,7 +32,7 @@ export const updatePreference = internalMutation({
       v.literal("event"),
     ),
     key: v.optional(v.string()),
-    channel: v.string(),
+    channel: channelNameValidator,
     enabled: v.boolean(),
   },
   returns: v.id("preferences"),
@@ -75,9 +75,9 @@ export const resolvePreferences = internalQuery({
     userId: v.string(),
     event: v.string(),
     category: v.optional(v.string()),
-    channels: v.array(v.string()),
+    channels: v.array(channelNameValidator),
   },
-  returns: v.array(v.string()),
+  returns: v.array(channelNameValidator),
   handler: async (ctx, args) => {
     const q = args.tenantId !== undefined
       ? ctx.db
@@ -90,7 +90,7 @@ export const resolvePreferences = internalQuery({
           .withIndex("by_userId", (q) => q.eq("userId", args.userId));
     const allPrefs = await q.collect();
 
-    const enabled: string[] = [];
+    const enabled: typeof args.channels = [];
 
     for (const channel of args.channels) {
       // 1. Event-level (most specific)

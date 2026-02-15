@@ -11,6 +11,7 @@ import type {
   SendResult,
   AuthIdentity,
   ChannelConfig,
+  ChannelName,
 } from "./types.js";
 import type { PushNotifications } from "@convex-dev/expo-push-notifications";
 import type { Resend } from "@convex-dev/resend";
@@ -25,7 +26,7 @@ import {
   type RenderedSms,
 } from "./adapters.js";
 
-export type { NotificationsOptions, NotificationDefinition, AuthIdentity } from "./types.js";
+export type { NotificationsOptions, NotificationDefinition, AuthIdentity, ChannelName } from "./types.js";
 export type {
   ChannelTemplates,
   EmailTemplate,
@@ -211,7 +212,7 @@ export class Notifications {
     args: {
       level: "global" | "category" | "event";
       key?: string;
-      channel: string;
+      channel: ChannelName;
       enabled: boolean;
     },
   ) {
@@ -428,8 +429,8 @@ export class Notifications {
     // 3. Deduplication key already recorded atomically in step 1
 
     // 4. Resolve enabled channels
-    const definedChannels = Object.keys(definition.channels);
-    let enabledChannels: string[];
+    const definedChannels = Object.keys(definition.channels) as ChannelName[];
+    let enabledChannels: ChannelName[];
 
     if (args.transactional) {
       enabledChannels = definedChannels;
@@ -443,7 +444,7 @@ export class Notifications {
           category: definition.category,
           channels: definedChannels,
         },
-      );
+      ) as ChannelName[];
     }
 
     // 5. Dispatch to each enabled non-inbox channel
@@ -473,7 +474,7 @@ export class Notifications {
    */
   private async dispatchChannel<T>(
     ctx: RunMutationCtx | RunActionCtx,
-    channel: string,
+    channel: ChannelName,
     definition: NotificationDefinition<T>,
     userId: string,
     data: T,
@@ -838,7 +839,12 @@ export class Notifications {
             v.literal("event"),
           ),
           key: v.optional(v.string()),
-          channel: v.string(),
+          channel: v.union(
+            v.literal("inbox"),
+            v.literal("email"),
+            v.literal("push"),
+            v.literal("sms"),
+          ),
           enabled: v.boolean(),
         },
         returns: v.string(),
@@ -847,7 +853,7 @@ export class Notifications {
           args: {
             level: "global" | "category" | "event";
             key?: string;
-            channel: string;
+            channel: ChannelName;
             enabled: boolean;
           },
         ) => self.updatePreference(ctx, args),
