@@ -2,17 +2,38 @@
 
 Semantic versioning roadmap for `convex-notifications`.
 
-## v1.4.0 - Current Release ✓
+## v2.0.0 - Current Release (API Redesign)
 
-All foundation features have been implemented and released:
+Full consumer API redesign focused on developer experience:
+
+- [x] `defineEvent<T>()` replaces `createNotification<T>()` (clearer naming)
+- [x] `required` replaces `transactional` on event definitions
+- [x] `SendResult` discriminated union (dedup returns value, not exception)
+- [x] `SendCtx` broad context type (no more `as any` casting)
+- [x] Auth moved from constructor to `api({ auth })` (separation of concerns)
+- [x] `sendMany()` with actor exclusion
+- [x] `dedupe` auto-scoped to userId (prevents cross-user dedup bugs)
+- [x] `"queued"` delivery status for async SMS
+- [x] `defaultPreferenceMode: "opt-in" | "opt-out"`
+- [x] `markAllRead` batched with `{ marked, hasMore }` return
+- [x] Webhook secrets required (fail loud, not silent)
+- [x] Scheduled notifications store event+data only (no stale templates)
+- [x] React mutation hooks: `useMarkRead`, `useMarkAllRead`, `useArchive`, `useUpdatePreference`
+- [x] `RenderedEmail`, `RenderedPush`, `RenderedSms` exported from main entry
+- [x] Full documentation rewrite
+
+## v1.5.0 - Delivery Reliability
+
+- [x] Webhook handlers for delivery status (Resend events, Twilio callbacks)
+- [x] Deduplication key cleanup cron (automatic TTL-based cleanup)
+- [x] Retry queue infrastructure
+- [x] Channel fallback infrastructure (push > email)
+
+## v1.4.0 - Foundation
 
 - [x] Component schema (notifications, preferences, deduplication, deliveryLog, pushTokens)
-- [x] `Notifications` class with auth injection (constructor pattern)
-- [x] `NotificationDefinition<T>` typed event definitions with per-channel templates
-- [x] `createNotification<T>()` helper function for type-safe event creation
-- [x] `api()` method for plug-and-play query/mutation exports
-- [x] Transactional flag (bypasses user preferences)
-- [x] Idempotency via `deduplicationKey`
+- [x] `Notifications` class with constructor-based auth injection
+- [x] `api()` method for zero-boilerplate query/mutation exports
 - [x] Inbox: `list` (paginated), `unreadCount`, `markRead`, `markAllRead`, `archive`
 - [x] 3-level preference resolution (global > category > event)
 - [x] `html?` field on email templates (React Email compatible)
@@ -20,47 +41,20 @@ All foundation features have been implemented and released:
 - [x] Channel adapter integration: push (Expo), email (Resend), SMS (Twilio)
 - [x] Delivery log tracking with status updates
 - [x] React hooks: `useNotifications()`, `useUnreadCount()`, `usePreferences()`
-- [x] NotificationsProvider context for React apps
-- [x] Example app with 70+ integration tests
+- [x] Example app with integration tests
 - [x] CI: test/lint/typecheck with release gated on passing tests
-- [x] Input validation utilities for email, phone, and push tokens
 
-## v1.5.0 - Delivery Reliability (next)
+## Future
 
-- [x] Webhook handlers for delivery status (Resend events, Twilio callbacks)
-- [x] Deduplication key cleanup cron (automatic TTL-based cleanup)
-- [ ] Retry logic via workflow component
-- [ ] Channel fallback (push > email after N minutes unread)
-
-## v1.6.0 - Scheduled + Recurring
-
-- [x] Delayed sends (schedule notification for future delivery)
+- [ ] Retry logic via workflow component (active dispatch retry)
+- [ ] Channel fallback processing (push > email after N minutes unread)
 - [ ] Recurring notifications via crons component
-- [ ] Smart send timing based on user behavior
-
-## v2.0.0 - Digests + Batching
-
-- [ ] Digest mode per event type (aggregate multiple events into one notification)
+- [ ] Digest mode per event type (aggregate into one notification)
 - [ ] Configurable digest windows (hourly, daily, weekly)
 - [ ] Notification grouping and stacking in inbox
-
-## v2.1.0 - Analytics + Admin
-
 - [ ] Send / delivered / read rate analytics
-- [ ] Admin dashboard hooks for monitoring
-- [ ] Export and reporting capabilities
-
-## v3.0.0 - Extended Channels
-
 - [ ] Slack channel adapter
 - [ ] Discord channel adapter
 - [ ] Generic webhook channel adapter
 - [ ] Custom channel adapter API
-
-## Future
-
-- CLI init command (`npx convex-notifications init`)
-- A/B testing for notification content
-- Timezone-aware scheduling
-- User engagement optimization
-- Template versioning and rollback
+- [ ] CLI init command (`npx convex-notifications init`)

@@ -10,14 +10,19 @@ A full-stack notifications engine for Convex apps. Real-time inbox, multi-channe
 
 - Real-time inbox with `list`, `unreadCount`, `markRead`, `markAllRead`, `archive`
 - Multi-channel delivery: push (Expo), email (Resend), SMS (Twilio)
-- `NotificationDefinition<T>` types — define an event in one file (~20 lines)
-- `api()` method for plug-and-play query/mutation exports (no boilerplate!)
+- `defineEvent<T>()` — define a notification in ~15 lines with typed templates
+- `send()` works from any context — mutations, actions, HTTP handlers — no casting
+- `sendMany()` to notify multiple users at once, with actor exclusion
+- `SendResult` discriminated union — dedup returns a value, not an exception
+- `required` flag for transactional notifications (OTP, security alerts)
+- `api({ auth })` for zero-boilerplate query/mutation exports
 - 3-level user preferences: global > category > event
-- Transactional notifications that bypass preferences
-- Idempotency via deduplication keys
-- Push token registration passthrough
-- React hooks for inbox and preference management
-- React Email support for rich email templates
+- `opt-in` / `opt-out` default preference modes
+- Idempotency via `dedupe` keys (scoped to userId)
+- `schedule()` / `cancel()` for future delivery
+- Push token registration
+- React hooks for inbox, preferences, and mutations
+- React Email support for rich HTML emails
 
 Found a bug? Feature request? [File it here](https://github.com/chiemerieokorie/notifications/issues).
 
@@ -46,63 +51,87 @@ app.use(notifications);
 export default app;
 ```
 
-### 2. Create your notifications API
+### 2. Create your notifications client
 
 ```ts
 // convex/notifications.ts
-import { Notifications } from "convex-notifications";
+import { Notifications, defineEvent } from "convex-notifications";
 import { components } from "./_generated/api";
+import { v } from "convex/values";
 
+// 1. Create client — channel config only, no auth
 const notifications = new Notifications(components.notifications, {
-  auth: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
-    return userId;
-  },
   resolvers: {
     email: async (ctx, userId) => {
       const user = await ctx.db.get(userId);
       return user?.email ?? null;
     },
-    phone: async (ctx, userId) => {
-      const user = await ctx.db.get(userId);
-      return user?.phone ?? null;
+  },
+});
+
+// 2. Define events
+export const welcomeNotification = defineEvent({
+  event: "user.welcome",
+  dataValidator: v.object({ userName: v.string() }),
+  channels: {
+    inbox: {
+      title: (data) => `Welcome, ${data.userName}!`,
+      body: () => "Thanks for joining.",
     },
-    pushToken: async (ctx, userId) => {
-      const user = await ctx.db.get(userId);
-      return user?.pushToken ?? null;
+    email: {
+      subject: (data) => `Welcome, ${data.userName}`,
+      body: (data) => `Hi ${data.userName}, welcome aboard!`,
     },
   },
 });
 
-// Use api() for plug-and-play exports (no boilerplate!)
+// 3. Export API — auth injected here
 export const {
-  list,
-  unreadCount,
-  markRead,
-  markAllRead,
-  archive,
-  getPreferences,
-  updatePreference,
-} = notifications.api();
+  list, unreadCount, markRead, markAllRead, archive,
+  getPreferences, updatePreference,
+} = notifications.api({
+  auth: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+    return userId;
+  },
+});
 ```
 
-### 3. Deploy
+### 3. Send from any mutation or action
+
+```ts
+import { welcomeNotification, notifications } from "./notifications";
+
+export const signUp = mutation({
+  args: { name: v.string() },
+  handler: async (ctx, args) => {
+    const userId = await createUser(ctx, args.name);
+
+    // One line. No wrapper. No casting.
+    await notifications.send(ctx, welcomeNotification, {
+      userId,
+      data: { userName: args.name },
+    });
+  },
+});
+```
+
+### 4. Deploy
 
 ```sh
 npx convex deploy
 ```
 
-## Defining Notification Events
+## Defining Events
 
-Use `createNotification<T>()` to define each event type in a single file. Templates receive **only `data`** — the engine resolves user addresses automatically via your configured resolvers.
+Use `defineEvent<T>()` to define each event type. Templates receive **only `data`** — the engine resolves addresses via your configured resolvers.
 
 ```ts
-// convex/notifications/commentReply.ts
-import { createNotification } from "convex-notifications";
+import { defineEvent } from "convex-notifications";
 import { v } from "convex/values";
 
-export const commentReplyNotification = createNotification({
+export const commentReply = defineEvent({
   event: "comment.reply",
   dataValidator: v.object({
     commenterName: v.string(),
@@ -119,7 +148,7 @@ export const commentReplyNotification = createNotification({
       body: (data) => `${data.commenterName} replied on "${data.postTitle}".`,
     },
     push: {
-      title: (data) => `New reply`,
+      title: () => "New reply",
       body: (data) => `${data.commenterName} replied on "${data.postTitle}"`,
     },
   },
@@ -128,49 +157,59 @@ export const commentReplyNotification = createNotification({
 
 ## Sending Notifications
 
-Call `.send()` from any mutation or action:
+### Basic send
 
 ```ts
-import { commentReplyNotification } from "./notifications/commentReply";
+const result = await notifications.send(ctx, commentReply, {
+  userId: comment.authorId,
+  data: { commenterName: "Alice", postTitle: "Hello" },
+});
 
-export const replyToComment = mutation({
-  args: { commentId: v.id("comments"), text: v.string() },
-  handler: async (ctx, args) => {
-    const comment = await ctx.db.get(args.commentId);
+// result is a discriminated union:
+if (result.status === "sent") {
+  console.log("Created:", result.notificationId);
+  console.log("Deliveries:", result.deliveries);
+}
+```
 
-    await commentReplyNotification.send(ctx, {
-      userId: comment.authorId,
-      data: {
-        commenterName: "Alice",
-        postTitle: comment.postTitle,
-      },
-    });
-  },
+### Required notifications (OTP, security alerts)
+
+Mark the event definition as `required: true` to bypass user preferences:
+
+```ts
+const otpNotification = defineEvent({
+  event: "auth.otp",
+  dataValidator: v.object({ code: v.string() }),
+  required: true, // Always sends, even if user disabled the channel
+  channels: { ... },
 });
 ```
 
-### Transactional Notifications
-
-Add `transactional: true` to bypass user preferences (for password resets, security alerts, etc.):
+### Send to multiple users
 
 ```ts
-await passwordResetNotification.send(ctx, {
-  userId,
-  data: { resetLink },
-  transactional: true,
+await notifications.sendMany(ctx, commentReply, {
+  userIds: [author._id, ...subscribers],
+  actor: currentUser._id, // Exclude the sender
+  data: { commenterName: "Alice", postTitle: "Hello" },
 });
 ```
 
 ### Deduplication
 
-Prevent duplicate sends with a deduplication key:
+Pass a `dedupe` key. Returns `{ status: "deduplicated" }` instead of throwing:
 
 ```ts
-await notification.send(ctx, {
+const result = await notifications.send(ctx, commentReply, {
   userId,
   data,
-  deduplicationKey: `comment-reply:${commentId}`,
+  dedupe: `reply:${commentId}`, // Scoped to userId automatically
 });
+
+if (result.status === "deduplicated") {
+  // Already sent — no error thrown
+  console.log("Suppressed:", result.dedupe);
+}
 ```
 
 ## Inbox
@@ -179,13 +218,10 @@ await notification.send(ctx, {
 
 ```ts
 // List notifications (paginated)
-const results = useQuery(api.notifications.list, {
-  limit: 20,
-  cursor: null,
-});
+const results = usePaginatedQuery(api.notifications.list, {}, { initialNumItems: 20 });
 
 // Unread count
-const count = useQuery(api.notifications.unreadCount);
+const count = useQuery(api.notifications.unreadCount, {});
 ```
 
 ### Mutations
@@ -193,29 +229,18 @@ const count = useQuery(api.notifications.unreadCount);
 ```ts
 const markRead = useMutation(api.notifications.markRead);
 const markAllRead = useMutation(api.notifications.markAllRead);
-const archiveNotification = useMutation(api.notifications.archive);
+const archive = useMutation(api.notifications.archive);
 
-// Mark single notification as read
 await markRead({ notificationId });
-
-// Mark all as read (timestamp-based)
-await markAllRead({});
-
-// Archive a notification
-await archiveNotification({ notificationId });
+await markAllRead({}); // Returns { marked, hasMore }
+await archive({ notificationId });
 ```
 
 ## Preferences
 
-Users can control which channels are enabled at three levels: global, category, and event. The most specific setting wins.
+Users control which channels are enabled at three levels: global, category, and event. Most specific wins.
 
 ```ts
-// Get current preferences
-const prefs = useQuery(api.notifications.getPreferences);
-
-// Update preferences
-const update = useMutation(api.notifications.updatePreference);
-
 // Disable email globally
 await update({ level: "global", channel: "email", enabled: false });
 
@@ -226,31 +251,71 @@ await update({ level: "category", key: "social", channel: "email", enabled: true
 await update({ level: "event", key: "comment.reply", channel: "push", enabled: false });
 ```
 
-## Push Token Registration
-
-Pass through push tokens to the underlying expo-push-notifications component:
+### Default preference mode
 
 ```ts
-const registerToken = useMutation(api.notifications.registerPushToken);
-await registerToken({ token: expoPushToken });
+const notifications = new Notifications(components.notifications, {
+  defaultPreferenceMode: "opt-in", // Channels disabled unless user enables
+  // defaultPreferenceMode: "opt-out", // Default: channels enabled unless user disables
+});
+```
+
+## Scheduled Notifications
+
+```ts
+// Schedule for future delivery
+const { scheduledNotificationId } = await notifications.schedule(ctx, reminder, {
+  userId,
+  data: { title: "Meeting", message: "In 15 minutes" },
+  scheduledFor: Date.now() + 15 * 60 * 1000, // Also accepts Date objects
+});
+
+// Cancel
+await notifications.cancel(ctx, scheduledNotificationId, userId);
 ```
 
 ## React Hooks
 
-```ts
-import { useNotifications, useUnreadCount, usePreferences } from "convex-notifications/react";
+```tsx
+import {
+  NotificationsProvider,
+  useNotifications,
+  useUnreadCount,
+  useMarkRead,
+  useMarkAllRead,
+  useArchive,
+  usePreferences,
+  useUpdatePreference,
+} from "convex-notifications/react";
+
+function App() {
+  return (
+    <NotificationsProvider api={api.notifications}>
+      <NotificationBell />
+    </NotificationsProvider>
+  );
+}
 
 function NotificationBell() {
-  const { notifications, loadMore, status } = useNotifications();
-  const unreadCount = useUnreadCount();
+  const { results, loadMore, status } = useNotifications();
+  const count = useUnreadCount();
+  const markRead = useMarkRead();
+  const markAllRead = useMarkAllRead();
+  const archive = useArchive();
 
   return (
     <div>
-      <span>({unreadCount})</span>
-      {notifications.map((n) => (
-        <div key={n._id}>{n.title}</div>
+      <span>({count ?? 0})</span>
+      <button onClick={() => markAllRead({})}>Mark all read</button>
+      {results.map((n) => (
+        <div key={n._id}>
+          <strong>{n.title}</strong>
+          <p>{n.body}</p>
+          <button onClick={() => markRead({ notificationId: n._id })}>Read</button>
+          <button onClick={() => archive({ notificationId: n._id })}>Archive</button>
+        </div>
       ))}
-      {status === "CanLoadMore" && <button onClick={loadMore}>Load more</button>}
+      {status === "CanLoadMore" && <button onClick={() => loadMore(20)}>More</button>}
     </div>
   );
 }
@@ -258,37 +323,27 @@ function NotificationBell() {
 
 ## React Email Support
 
-Use the `html` field to render rich HTML emails. This works with React Email's `render()` function or any other HTML-producing tool:
+Use the `html` field to render rich emails:
 
 ```ts
 import { render } from "@react-email/components";
 import WelcomeEmail from "./emails/WelcomeEmail";
 
-export const welcomeNotification = createNotification({
+export const welcome = defineEvent({
   event: "user.welcome",
   dataValidator: v.object({ userName: v.string() }),
   channels: {
-    email: {
-      subject: (data) => `Welcome, ${data.userName}`,
-      body: (data) => `Welcome ${data.userName}! Thanks for joining.`, // Plain text fallback
-      html: (data) => render(<WelcomeEmail userName={data.userName} />),
-    },
     inbox: {
       title: (data) => `Welcome, ${data.userName}!`,
-      body: () => `Thanks for joining.`,
+      body: () => "Thanks for joining.",
+    },
+    email: {
+      subject: (data) => `Welcome, ${data.userName}`,
+      body: (data) => `Plain text fallback for ${data.userName}`,
+      html: async (data) => await render(<WelcomeEmail userName={data.userName} />),
     },
   },
 });
-```
-
-The `html` field supports both sync and async functions, so you can use `await render()` if needed:
-
-```ts
-email: {
-  subject: (data) => `Welcome, ${data.userName}`,
-  body: (data) => `Plain text version`,
-  html: async (data) => await render(<WelcomeEmail userName={data.userName} />),
-},
 ```
 
 ## API Reference
@@ -298,46 +353,14 @@ email: {
 | `list` | query | required | Paginated inbox notifications |
 | `unreadCount` | query | required | Count of unread notifications |
 | `markRead` | mutation | required | Mark a notification as read |
-| `markAllRead` | mutation | required | Mark all notifications as read (timestamp-based) |
+| `markAllRead` | mutation | required | Mark all as read (batched, returns `{ marked, hasMore }`) |
 | `archive` | mutation | required | Archive a notification |
 | `getPreferences` | query | required | Get user's notification preferences |
 | `updatePreference` | mutation | required | Update channel preferences (global/category/event) |
-
-## Configuration
-
-```ts
-interface NotificationsOptions {
-  /** Resolve the current user ID from the request context. */
-  auth: (ctx: { auth: Auth }) => Promise<string>;
-
-  /** Resolve delivery addresses per channel. Return null to skip the channel. */
-  resolvers?: {
-    email?: (ctx: { auth: Auth }, userId: string) => Promise<string | null>;
-    phone?: (ctx: { auth: Auth }, userId: string) => Promise<string | null>;
-    pushToken?: (ctx: { auth: Auth }, userId: string) => Promise<string | null>;
-  };
-}
-```
-
-## Architecture
-
-```
-User Event (mutation/action)
-  │
-  └─ createNotification().send(ctx, { userId, data })
-       │
-       ├─ Create inbox record (always)
-       ├─ Check transactional flag
-       ├─ Resolve preferences (global → category → event)
-       │
-       └─ For each enabled channel:
-            ├─ Render template with data
-            ├─ Resolve address via config resolvers
-            └─ Dispatch to child component
-                 ├─ expo-push-notifications (push)
-                 ├─ resend (email)
-                 └─ twilio (SMS)
-```
+| `registerPushToken` | mutation | required | Register an Expo push token |
+| `getPushTokens` | query | required | Get user's push tokens |
+| `deletePushToken` | mutation | required | Delete a push token |
+| `getDeliveryLogs` | query | - | Get delivery logs for a notification |
 
 ## Troubleshooting
 
@@ -348,32 +371,12 @@ Run codegen to regenerate types:
 npx convex dev
 ```
 
-### Auth provider mismatch
-
-The `auth` function in `new Notifications()` must match your auth setup. For Convex Auth:
-```ts
-auth: async (ctx) => {
-  const userId = await getAuthUserId(ctx);
-  if (!userId) throw new Error("Not authenticated");
-  return userId;
-},
-```
-
-For Clerk:
-```ts
-auth: async (ctx) => {
-  const identity = await ctx.auth.getUserIdentity();
-  if (!identity) throw new Error("Not authenticated");
-  return identity.subject;
-},
-```
-
 ### Notifications not delivering to a channel
 
 1. Verify the resolver returns a non-null value for that channel
 2. Check that user preferences have the channel enabled
-3. For transactional notifications, ensure `transactional: true` is set
-4. Check the delivery log for error details
+3. For required notifications, ensure `required: true` is set on the event definition
+4. Check delivery logs for error details
 
 <!-- END: Include on https://convex.dev/components -->
 
@@ -383,7 +386,5 @@ auth: async (ctx) => {
 npm i
 npm run dev
 ```
-
-This starts parallel processes for the Convex backend, Vite frontend, and component build watcher. Changes to `src/` trigger automatic rebuilds.
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full development guide.

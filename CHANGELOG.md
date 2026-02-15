@@ -1,3 +1,36 @@
+## [2.0.0](https://github.com/chiemerieokorie/convex-notifications/compare/v1.5.1...v2.0.0) (2026-02-15)
+
+### BREAKING CHANGES
+
+* **api:** `createNotification()` renamed to `defineEvent()` (`createNotification` still works as deprecated alias)
+* **api:** `transactional` option renamed to `required` on event definitions
+* **api:** `deduplicationKey` renamed to `dedupe` on send() args
+* **api:** `deduplicationTtlSeconds` renamed to `dedupeTtlSeconds`
+* **api:** `send()` returns `SendResult` discriminated union — dedup returns `{ status: "deduplicated" }` instead of throwing
+* **api:** `markAllRead` returns `{ marked, hasMore }` instead of `null`
+* **api:** Auth moved from constructor to `api({ auth })` parameter
+* **schema:** `transactional` column renamed to `required` on notifications table
+* **schema:** `error` column renamed to `reason` on deliveryLog table
+* **schema:** `channels` column removed from scheduledNotifications table (stores event+data only)
+* **schema:** `deliveryLog.status` now includes `"queued"` status
+* **webhooks:** Resend and Twilio webhooks now require secrets (return 500 if not configured)
+
+### Features
+
+* **api:** `defineEvent()` validates event name and requires inbox channel at definition time
+* **api:** `sendMany()` to notify multiple users with actor exclusion
+* **api:** `schedule()` accepts `Date` objects in addition to timestamps
+* **api:** `cancel()` shorthand for `cancelScheduled()`
+* **api:** `SendCtx` broad context type — send() works from mutations, actions, HTTP handlers without casting
+* **api:** `defaultPreferenceMode: "opt-in" | "opt-out"` constructor option
+* **api:** `"queued"` delivery status for SMS dispatched via scheduler
+* **api:** Dedupe keys automatically scoped to userId
+* **react:** Added mutation hooks: `useMarkRead`, `useMarkAllRead`, `useArchive`, `useUpdatePreference`, `useRegisterPushToken`, `useDeletePushToken`
+* **react:** Simplified `NotificationsProvider` to accept the `api()` output directly
+* **component:** `markAllRead` batches 100 per call with continuation signal
+* **component:** `resolvePreferences` accepts `defaultMode` parameter
+* **types:** Exported `RenderedEmail`, `RenderedPush`, `RenderedSms` from main entry point
+
 ## [1.5.1](https://github.com/chiemerieokorie/convex-notifications/compare/v1.5.0...v1.5.1) (2026-02-15)
 
 ### Bug Fixes

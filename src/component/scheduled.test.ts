@@ -20,10 +20,8 @@ describe("scheduled notifications", () => {
     const id = await t.mutation(internal.scheduled.scheduleNotification, {
       userId: "user1",
       event: "test.event",
-      title: "Test Title",
-      body: "Test Body",
+      data: { message: "Test Body" },
       scheduledFor,
-      channels: { inbox: true },
     });
 
     expect(id).toBeDefined();
@@ -47,10 +45,8 @@ describe("scheduled notifications", () => {
       t.mutation(internal.scheduled.scheduleNotification, {
         userId: "user1",
         event: "test.event",
-        title: "Test Title",
-        body: "Test Body",
+        data: { message: "Test Body" },
         scheduledFor: now - 1000, // In the past
-        channels: { inbox: true },
       }),
     ).rejects.toThrow("scheduledFor must be in the future");
   });
@@ -63,10 +59,8 @@ describe("scheduled notifications", () => {
     const id = await t.mutation(internal.scheduled.scheduleNotification, {
       userId: "user1",
       event: "test.event",
-      title: "Test Title",
-      body: "Test Body",
+      data: { message: "Test Body" },
       scheduledFor: now + 60000,
-      channels: { inbox: true },
     });
 
     const cancelled = await t.mutation(
@@ -93,10 +87,8 @@ describe("scheduled notifications", () => {
     const id = await t.mutation(internal.scheduled.scheduleNotification, {
       userId: "user1",
       event: "test.event",
-      title: "Test Title",
-      body: "Test Body",
+      data: { message: "Test Body" },
       scheduledFor: now + 60000,
-      channels: { inbox: true },
     });
 
     const cancelled = await t.mutation(
@@ -118,10 +110,8 @@ describe("scheduled notifications", () => {
     await t.mutation(internal.scheduled.scheduleNotification, {
       userId: "user1",
       event: "test.event",
-      title: "Scheduled Title",
-      body: "Scheduled Body",
+      data: { message: "Scheduled Body" },
       scheduledFor: now + 60000,
-      channels: { inbox: true },
     });
 
     // Process now - nothing should happen
@@ -149,7 +139,8 @@ describe("scheduled notifications", () => {
       paginationOpts: { numItems: 10, cursor: null },
     });
     expect(notifications.page).toHaveLength(1);
-    expect(notifications.page[0].title).toBe("Scheduled Title");
+    // Title is the event name (placeholder — client re-renders on dispatch)
+    expect(notifications.page[0].title).toBe("test.event");
   });
 
   test("processScheduledNotifications respects deduplication", async () => {
@@ -169,11 +160,9 @@ describe("scheduled notifications", () => {
     await t.mutation(internal.scheduled.scheduleNotification, {
       userId: "user1",
       event: "test.event",
-      title: "Duplicate",
-      body: "Should be suppressed",
+      data: { message: "Should be suppressed" },
       scheduledFor: now + 1000, // Due very soon
       deduplicationKey: dedupeKey,
-      channels: { inbox: true },
     });
 
     // Advance time and process
@@ -204,19 +193,15 @@ describe("scheduled notifications", () => {
     await t.mutation(internal.scheduled.scheduleNotification, {
       userId: "user1",
       event: "event1",
-      title: "Title 1",
-      body: "Body 1",
+      data: { message: "Body 1" },
       scheduledFor: now + 60000,
-      channels: { inbox: true },
     });
 
     const id2 = await t.mutation(internal.scheduled.scheduleNotification, {
       userId: "user1",
       event: "event2",
-      title: "Title 2",
-      body: "Body 2",
+      data: { message: "Body 2" },
       scheduledFor: now + 60000,
-      channels: { inbox: true },
     });
 
     // Cancel one

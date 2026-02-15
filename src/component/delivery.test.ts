@@ -253,7 +253,7 @@ describe("delivery", () => {
         externalId: "failure_sentat_test",
         channel: "email",
         status: "failed",
-        error: "Bounce",
+        reason: "Bounce",
       });
 
       const logsAfterFailed = await t.query(internal.delivery.getDeliveryLogs, {
@@ -262,7 +262,7 @@ describe("delivery", () => {
       // sentAt should still be preserved
       expect(logsAfterFailed[0].sentAt).toBe(originalSentAt);
       expect(logsAfterFailed[0].status).toBe("failed");
-      expect(logsAfterFailed[0].error).toBe("Bounce");
+      expect(logsAfterFailed[0].reason).toBe("Bounce");
     });
 
     test("stores webhook data in metadata", async () => {

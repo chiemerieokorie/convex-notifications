@@ -55,7 +55,6 @@ export const unreadCount = internalQuery({
           .withIndex("by_userId_unread", (q) =>
             q.eq("userId", args.userId).eq("readAt", undefined),
           );
-    // Count in-place instead of collecting all documents into memory
     let count = 0;
     for await (const n of q) {
       if (n.archivedAt === undefined) count++;
@@ -76,7 +75,6 @@ export const markRead = internalMutation({
     if (!notification || notification.userId !== args.userId) {
       throw new Error("Notification not found");
     }
-    // Cross-check tenantId for multi-tenant isolation
     if (args.tenantId !== undefined && notification.tenantId !== args.tenantId) {
       throw new Error("Notification not found");
     }
@@ -99,13 +97,24 @@ export const markRead = internalMutation({
   },
 });
 
+/**
+ * Mark all notifications as read for a user.
+ *
+ * Processes up to `batchSize` (default 100) notifications per call.
+ * If more remain, the caller should schedule a continuation.
+ */
 export const markAllRead = internalMutation({
   args: {
     tenantId: v.optional(v.string()),
     userId: v.string(),
+    batchSize: v.optional(v.number()),
   },
-  returns: v.null(),
+  returns: v.object({
+    marked: v.number(),
+    hasMore: v.boolean(),
+  }),
   handler: async (ctx, args) => {
+    const batchSize = args.batchSize ?? 100;
     const q = args.tenantId !== undefined
       ? ctx.db
           .query("notifications")
@@ -117,12 +126,15 @@ export const markAllRead = internalMutation({
           .withIndex("by_userId_unread", (q) =>
             q.eq("userId", args.userId).eq("readAt", undefined),
           );
-    const unread = await q.collect();
+    const unread = await q.take(batchSize + 1);
+    const hasMore = unread.length > batchSize;
+    const toMark = unread.slice(0, batchSize);
     const now = Date.now();
-    for (const n of unread) {
+
+    for (const n of toMark) {
       await ctx.db.patch(n._id, { readAt: now });
 
-      // Cancel any pending fallbacks for this notification
+      // Cancel pending fallbacks
       const pendingFallbacks = await ctx.db
         .query("fallbackQueue")
         .withIndex("by_notificationId", (q) => q.eq("notificationId", n._id))
@@ -133,7 +145,8 @@ export const markAllRead = internalMutation({
         await ctx.db.patch(fallback._id, { status: "cancelled" });
       }
     }
-    return null;
+
+    return { marked: toMark.length, hasMore };
   },
 });
 
@@ -149,7 +162,6 @@ export const archive = internalMutation({
     if (!notification || notification.userId !== args.userId) {
       throw new Error("Notification not found");
     }
-    // Cross-check tenantId for multi-tenant isolation
     if (args.tenantId !== undefined && notification.tenantId !== args.tenantId) {
       throw new Error("Notification not found");
     }

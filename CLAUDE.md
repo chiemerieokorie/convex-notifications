@@ -42,39 +42,53 @@ npm run build:codegen
 Consumer App
   └─ convex.config.ts ─── app.use(notifications)
        │
-       ├─ createNotificationsApi(components.notifications, { auth, resolvers })
-       │    → list, unreadCount, markRead, markAllRead, archive
-       │    → registerPushToken, updatePreferences, getPreferences
+       ├─ new Notifications(components.notifications, { channels, resolvers })
+       │    → Constructor: channel config + resolvers only, NO auth
        │
-       └─ createNotification<T>({ event, channels })
-            → send(ctx, { data })   ← templates receive only data, NOT userId/to
-            → Templates return { title, body } per channel
+       ├─ notifications.api({ auth })
+       │    → Auth injected here (separation of concerns)
+       │    → Returns: list, unreadCount, markRead, markAllRead, archive
+       │    → Returns: getPreferences, updatePreference
+       │    → Returns: registerPushToken, getPushTokens, deletePushToken
+       │    → Returns: getDeliveryLogs
+       │
+       ├─ defineEvent<T>({ event, channels, required?, category? })
+       │    → One per notification type (~15 lines)
+       │    → Templates receive only `data`, NOT userId/addresses
+       │    → inbox channel is required (compile-time)
+       │
+       └─ notifications.send(ctx, eventDef, { userId, data })
+            → Works from mutations, actions, HTTP — no casting
+            → Returns SendResult discriminated union
             → Engine resolves addresses via config resolvers
 
 Component Internals
   src/component/        ← tables, core functions (runs inside component sandbox)
   src/component/channels/ ← channel adapters (email, push, sms)
-  src/client/           ← API factory, helpers (runs in consumer's function context)
-  src/react/            ← React hooks for inbox + preferences
+  src/client/           ← Notifications class, defineEvent(), types
+  src/react/            ← React hooks for inbox, preferences, mutations
   src/test.ts           ← Test registration utility
 ```
 
 ### Dispatch Flow
 
-1. Consumer calls `send(ctx, { data })` from a `createNotification()` event
-2. Engine creates inbox record (always)
-3. Engine checks if notification is transactional — if yes, skip preference check
-4. Engine resolves user preferences (3-level: global > category > event)
+1. Consumer calls `notifications.send(ctx, eventDef, { userId, data })`
+2. Engine creates inbox record (always — inbox is required on every event)
+3. Engine checks if event definition has `required: true` — if yes, skip preference check
+4. Engine resolves user preferences (3-level: global > category > event) with `defaultPreferenceMode`
 5. For each enabled channel: render template with `data`, resolve address via config resolvers, dispatch to child component
+6. Returns `SendResult`: `{ status: "sent", notificationId, deliveries }` or `{ status: "deduplicated", dedupe }`
 
 ### Key Tables (src/component/schema.ts)
 
 | Table | Purpose |
 |---|---|
-| notifications | Inbox records (userId, event, title, body, read, archived) |
+| notifications | Inbox records (userId, event, title, body, read, archived, required) |
 | preferences | Per-user channel preferences (global, category, event levels) |
 | deduplication | Idempotency keys with TTL |
-| deliveryLog | Per-channel delivery status tracking |
+| deliveryLog | Per-channel delivery status tracking (includes "queued" status) |
+| scheduledNotifications | Stores event+data only (no stale rendered templates) |
+| pushTokens | Push token registration per user |
 
 ## Key Patterns
 
@@ -87,82 +101,142 @@ const app = defineApp();
 app.use(notifications);
 ```
 
-### createNotificationsApi() Factory
+### Notifications Constructor + api()
 
-The consumer creates their API by injecting auth and address resolvers:
+Auth is separated from channel config. Constructor takes channels/resolvers; `api()` injects auth:
 
 ```ts
 // convex/notifications.ts (consumer app)
-import { createNotificationsApi } from "convex-notifications";
+import { Notifications, defineEvent } from "convex-notifications";
 import { components } from "./_generated/api";
 
-export const notifications = createNotificationsApi(components.notifications, {
+// 1. Constructor — channel config + resolvers, no auth
+const notifications = new Notifications(components.notifications, {
+  resolvers: {
+    email: async (ctx, userId) => { /* return email string or null */ },
+    phone: async (ctx, userId) => { /* return phone string or null */ },
+  },
+  defaultPreferenceMode: "opt-out", // or "opt-in"
+});
+
+// 2. api() — auth injected here
+export const {
+  list, unreadCount, markRead, markAllRead, archive,
+  getPreferences, updatePreference,
+  registerPushToken, getPushTokens, deletePushToken,
+  getDeliveryLogs,
+} = notifications.api({
   auth: async (ctx) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
     return userId;
   },
-  resolvers: {
-    email: async (ctx, userId) => { /* return email string */ },
-    phone: async (ctx, userId) => { /* return phone string */ },
-    pushToken: async (ctx, userId) => { /* return token string */ },
-  },
 });
-
-export const { list, unreadCount, markRead, markAllRead, archive } = notifications;
 ```
 
-### createNotification<T>() Event Factory
+### defineEvent<T>() — Event Definitions
 
-Each notification event is defined in a single file (~20 lines). Templates receive **only `data`** — the engine resolves recipients and addresses.
+Each notification event is defined with `defineEvent()`. Templates receive **only `data`** — the engine resolves recipients and addresses.
 
 ```ts
-// convex/notifications/welcome.ts
-import { createNotification } from "convex-notifications";
+import { defineEvent } from "convex-notifications";
 import { v } from "convex/values";
 
-export const welcomeNotification = createNotification({
+export const welcomeNotification = defineEvent({
   event: "user.welcome",
   dataValidator: v.object({ userName: v.string() }),
   category: "onboarding",
   channels: {
-    inbox: {
+    inbox: {  // Required on every event
       title: (data) => `Welcome, ${data.userName}!`,
-      body: (data) => `Thanks for joining. Here's how to get started.`,
+      body: () => "Thanks for joining.",
     },
     email: {
-      subject: (data) => `Welcome to the app, ${data.userName}`,
-      body: (data) => `Hi ${data.userName}, ...`,
-    },
-    push: {
-      title: (data) => `Welcome!`,
-      body: (data) => `Hey ${data.userName}, check out your dashboard.`,
+      subject: (data) => `Welcome, ${data.userName}`,
+      body: (data) => `Hi ${data.userName}, welcome!`,
+      html: (data) => `<h1>Welcome, ${data.userName}!</h1>`, // optional
     },
   },
 });
 ```
 
-Sending:
+### Sending Notifications
+
+`send()` works from any context (mutations, actions, HTTP handlers) without casting:
+
 ```ts
-await welcomeNotification.send(ctx, {
-  userId: "user123",
+// Returns a discriminated union — no exceptions for dedup
+const result = await notifications.send(ctx, welcomeNotification, {
+  userId,
   data: { userName: "Alice" },
+  dedupe: `welcome:${userId}`, // auto-scoped to userId
+});
+
+if (result.status === "sent") {
+  console.log(result.notificationId, result.deliveries);
+} else {
+  console.log("Suppressed:", result.dedupe);
+}
+```
+
+### sendMany() with Actor Exclusion
+
+```ts
+await notifications.sendMany(ctx, commentReplyNotification, {
+  userIds: subscribers,
+  actor: currentUser._id, // excluded from recipients
+  data: { commenterName: "Alice", postTitle: "Hello" },
+});
+```
+
+### Required Notifications
+
+Set `required: true` on the event definition (not per-send) to bypass preferences:
+
+```ts
+const otpNotification = defineEvent({
+  event: "auth.otp",
+  required: true, // Always sends, bypasses all preferences
+  dataValidator: v.object({ code: v.string() }),
+  channels: { inbox: { ... }, sms: { ... } },
 });
 ```
 
 ### 3-Level Preference Hierarchy
 
-Preferences resolve in order: **global > category > event**. The most specific enabled setting wins. Transactional notifications bypass preferences entirely.
+Preferences resolve in order: **global > category > event**. The most specific enabled setting wins. `required` notifications bypass preferences entirely. Default mode (`"opt-in"` or `"opt-out"`) controls what happens when no preference is set.
 
 ### Deduplication
 
-Pass a `deduplicationKey` to prevent duplicate sends within a TTL window:
+Pass a `dedupe` key. Returns `{ status: "deduplicated" }` instead of throwing:
 ```ts
-await notification.send(ctx, {
+const result = await notifications.send(ctx, event, {
   userId,
   data,
-  deduplicationKey: `comment-reply:${commentId}`,
+  dedupe: `reply:${commentId}`, // auto-scoped to userId
 });
+// result.status === "deduplicated" | "sent"
+```
+
+### markAllRead — Batched
+
+Returns `{ marked, hasMore }` with batch processing (100 per call):
+```ts
+const { marked, hasMore } = await markAllRead({});
+```
+
+## React Hooks
+
+The react package exports query hooks and mutation hooks:
+
+```tsx
+import {
+  NotificationsProvider,
+  useNotifications, useUnreadCount, usePreferences,
+  useMarkRead, useMarkAllRead, useArchive, useUpdatePreference,
+  useRegisterPushToken, useDeletePushToken, usePushTokens,
+  useDeliveryLogs,
+} from "convex-notifications/react";
 ```
 
 ## Testing
@@ -203,11 +277,10 @@ These rules apply to all code in this component:
 
 ## How to Add a New Notification Event
 
-1. Create a file in the consumer's `convex/notifications/` directory
-2. Call `createNotification()` with event name, data validator, and channel templates
-3. Export the result and call `.send()` from any mutation or action
+1. Call `defineEvent()` with event name, data validator, category, and channel templates
+2. Export the result and call `notifications.send(ctx, eventDef, { userId, data })` from any mutation or action
 
-That's it — one file, ~20 lines. No schema changes, no component modifications.
+That's it — one call, ~15 lines. No schema changes, no component modifications.
 
 ## How to Add a New Channel
 

@@ -4,9 +4,9 @@ import type { ComponentApi } from "../component/_generated/component.js";
 import type {
   NotificationsOptions,
   NotificationDefinition,
-  RunQueryCtx,
-  RunMutationCtx,
-  RunActionCtx,
+  QueryCtx,
+  MutationCtx,
+  SendCtx,
   DeliveryResult,
   SendResult,
   AuthIdentity,
@@ -25,8 +25,14 @@ import {
   type RenderedSms,
 } from "./adapters.js";
 
-export type { NotificationsOptions, NotificationDefinition, AuthIdentity } from "./types.js";
+// ---------------------------------------------------------------------------
+// Public re-exports
+// ---------------------------------------------------------------------------
+
 export type {
+  NotificationsOptions,
+  NotificationDefinition,
+  AuthIdentity,
   ChannelTemplates,
   EmailTemplate,
   InboxTemplate,
@@ -38,60 +44,60 @@ export type {
   SmsChannelConfig,
   DeliveryResult,
   SendResult,
-  RunQueryCtx,
-  RunMutationCtx,
-  RunActionCtx,
+  QueryCtx,
+  MutationCtx,
+  ActionCtx,
+  SendCtx,
 } from "./types.js";
 
+export type { RenderedEmail, RenderedPush, RenderedSms } from "./adapters.js";
+
+// ---------------------------------------------------------------------------
+// defineEvent — the new way to create notification definitions
+// ---------------------------------------------------------------------------
+
 /**
- * Create a typed notification definition.
+ * Define a notification event with typed data and per-channel templates.
  *
- * This helper function provides runtime validation and type inference
- * for notification definitions.
+ * `inbox` is required — every notification appears in the inbox.
  *
  * @example
  * ```ts
- * const welcomeNotification = createNotification({
- *   event: "user.welcome",
- *   dataValidator: v.object({ userName: v.string() }),
- *   category: "onboarding",
+ * const otpNotification = defineEvent({
+ *   event: "auth.otp",
+ *   dataValidator: v.object({ code: v.string() }),
+ *   required: true,
  *   channels: {
  *     inbox: {
- *       title: (data) => `Welcome, ${data.userName}!`,
- *       body: () => "Thanks for joining.",
+ *       title: () => "Verification Code",
+ *       body: (data) => `Your code is ${data.code}`,
  *     },
- *     email: {
- *       subject: (data) => `Welcome, ${data.userName}!`,
- *       body: (data) => `Hi ${data.userName}, welcome aboard!`,
+ *     sms: {
+ *       body: (data) => `Your code is ${data.code}. Do not share.`,
  *     },
  *   },
  * });
  * ```
  */
-export function createNotification<T>(
+export function defineEvent<T>(
   definition: NotificationDefinition<T>,
 ): NotificationDefinition<T> {
-  // Validate required fields
   if (!definition.event || definition.event.trim() === "") {
-    throw new Error("Notification definition must have a non-empty 'event' name");
+    throw new Error("Notification event must have a non-empty 'event' name");
   }
-
-  if (!definition.channels || Object.keys(definition.channels).length === 0) {
-    throw new Error("Notification definition must have at least one channel template");
+  if (!definition.channels?.inbox) {
+    throw new Error("Notification event must include an 'inbox' channel template");
   }
-
-  // Validate that at least inbox is defined (required for all notifications)
-  if (!definition.channels.inbox) {
-    throw new Error("Notification definition must include an 'inbox' channel template");
-  }
-
   return definition;
 }
 
-/**
- * Parse an AuthIdentity into userId and optional tenantId.
- * Supports both string (backwards compat) and { userId, tenantId } forms.
- */
+/** @deprecated Use `defineEvent()` instead. */
+export const createNotification = defineEvent;
+
+// ---------------------------------------------------------------------------
+// Helper
+// ---------------------------------------------------------------------------
+
 function parseIdentity(identity: AuthIdentity): { userId: string; tenantId?: string } {
   if (typeof identity === "string") {
     return { userId: identity };
@@ -99,29 +105,18 @@ function parseIdentity(identity: AuthIdentity): { userId: string; tenantId?: str
   return { userId: identity.userId, tenantId: identity.tenantId };
 }
 
+// ---------------------------------------------------------------------------
+// Notifications class
+// ---------------------------------------------------------------------------
+
 /**
  * Extended options that include child component clients for delivery.
  */
 export type NotificationsWithChannelsOptions = NotificationsOptions & {
-  /**
-   * Child component clients for channel delivery.
-   * Pass these to enable actual delivery through each channel.
-   */
+  /** Child component clients for channel delivery. */
   clients?: {
-    /**
-     * Resend client for email delivery.
-     * Create with: new Resend(components.resend, { ... })
-     */
     email?: Resend;
-    /**
-     * Expo Push Notifications client for push delivery.
-     * Create with: new PushNotifications(components.pushNotifications, { ... })
-     */
     push?: PushNotifications<string>;
-    /**
-     * Twilio client for SMS delivery.
-     * Create with: new Twilio(components.twilio, { ... })
-     */
     sms?: Twilio<{ defaultFrom: string }>;
   };
 };
@@ -132,285 +127,91 @@ export class Notifications {
     public options: NotificationsWithChannelsOptions,
   ) {}
 
-  /**
-   * Resolve the auth identity and return userId + optional tenantId.
-   */
-  private async resolveAuth(ctx: { auth: import("convex/server").Auth }): Promise<{ userId: string; tenantId?: string }> {
-    const identity = await this.options.auth(ctx);
-    return parseIdentity(identity);
+  // -------------------------------------------------------------------------
+  // Auth
+  // -------------------------------------------------------------------------
+
+  private async resolveAuth(_ctx: { auth: import("convex/server").Auth }): Promise<{ userId: string; tenantId?: string }> {
+    // Auth is passed via api({ auth }) — fall back to identity-less mode
+    throw new Error("resolveAuth called without auth — use api({ auth }) to bind auth");
   }
 
-  /**
-   * Resolve channel config, which may be static or a per-tenant function.
-   */
+  // -------------------------------------------------------------------------
+  // Channel config
+  // -------------------------------------------------------------------------
+
   private async resolveChannelConfig(tenantId?: string): Promise<ChannelConfig | undefined> {
     const channels = this.options.channels;
     if (!channels) return undefined;
     if (typeof channels === "function") {
       if (!tenantId) {
-        throw new Error("Channel config is a function but no tenantId provided. Use multi-tenant auth or pass tenantId explicitly.");
+        throw new Error("Channel config is a function but no tenantId provided.");
       }
       return await channels(tenantId);
     }
     return channels;
   }
 
-  async list(
-    ctx: RunQueryCtx,
-    paginationOpts: { numItems: number; cursor: string | null },
-  ) {
-    const { userId, tenantId } = await this.resolveAuth(ctx);
-    return await ctx.runQuery(this.component.inbox.list, {
-      tenantId,
-      userId,
-      paginationOpts,
-    });
-  }
-
-  async unreadCount(ctx: RunQueryCtx) {
-    const { userId, tenantId } = await this.resolveAuth(ctx);
-    return await ctx.runQuery(this.component.inbox.unreadCount, { tenantId, userId });
-  }
-
-  async markRead(ctx: RunMutationCtx, notificationId: string) {
-    const { userId, tenantId } = await this.resolveAuth(ctx);
-    return await ctx.runMutation(this.component.inbox.markRead, {
-      tenantId,
-      userId,
-      notificationId,
-    });
-  }
-
-  async markAllRead(ctx: RunMutationCtx) {
-    const { userId, tenantId } = await this.resolveAuth(ctx);
-    return await ctx.runMutation(this.component.inbox.markAllRead, {
-      tenantId,
-      userId,
-    });
-  }
-
-  async archive(ctx: RunMutationCtx, notificationId: string) {
-    const { userId, tenantId } = await this.resolveAuth(ctx);
-    return await ctx.runMutation(this.component.inbox.archive, {
-      tenantId,
-      userId,
-      notificationId,
-    });
-  }
-
-  async getPreferences(ctx: RunQueryCtx) {
-    const { userId, tenantId } = await this.resolveAuth(ctx);
-    return await ctx.runQuery(
-      this.component.preferences.getPreferences,
-      { tenantId, userId },
-    );
-  }
-
-  async updatePreference(
-    ctx: RunMutationCtx,
-    args: {
-      level: "global" | "category" | "event";
-      key?: string;
-      channel: string;
-      enabled: boolean;
-    },
-  ) {
-    const { userId, tenantId } = await this.resolveAuth(ctx);
-    return await ctx.runMutation(
-      this.component.preferences.updatePreference,
-      { tenantId, userId, ...args },
-    );
-  }
-
-  /**
-   * Register a push notification token for a user.
-   * Uses the component's internal push token storage.
-   */
-  async registerPushToken(
-    ctx: RunMutationCtx,
-    args: {
-      token: string;
-      platform?: "ios" | "android" | "web";
-      deviceId?: string;
-    },
-  ) {
-    const { userId, tenantId } = await this.resolveAuth(ctx);
-    return await ctx.runMutation(this.component.pushTokens.registerPushToken, {
-      tenantId,
-      userId,
-      token: args.token,
-      platform: args.platform,
-      deviceId: args.deviceId,
-    });
-  }
-
-  /**
-   * Get all push tokens for the current user.
-   */
-  async getPushTokens(ctx: RunQueryCtx) {
-    const { userId, tenantId } = await this.resolveAuth(ctx);
-    return await ctx.runQuery(this.component.pushTokens.getPushTokens, {
-      tenantId,
-      userId,
-    });
-  }
-
-  /**
-   * Delete a push token.
-   */
-  async deletePushToken(ctx: RunMutationCtx, token: string) {
-    const { userId, tenantId } = await this.resolveAuth(ctx);
-    return await ctx.runMutation(this.component.pushTokens.deletePushToken, {
-      tenantId,
-      userId,
-      token,
-    });
-  }
-
-  /**
-   * Schedule a notification for future delivery.
-   *
-   * @returns The scheduled notification ID
-   */
-  async schedule<T>(
-    ctx: RunMutationCtx,
-    definition: NotificationDefinition<T>,
-    args: {
-      userId: string;
-      tenantId?: string;
-      data: T;
-      scheduledFor: number | Date;
-      transactional?: boolean;
-      deduplicationKey?: string;
-    },
-  ): Promise<{ scheduledNotificationId: string }> {
-    const data = args.data;
-    const scheduledFor =
-      args.scheduledFor instanceof Date
-        ? args.scheduledFor.getTime()
-        : args.scheduledFor;
-
-    // Validate scheduledFor is in the future
-    if (scheduledFor <= Date.now()) {
-      throw new Error("scheduledFor must be in the future");
-    }
-
-    // Render inbox template for storage
-    const inboxTemplate = definition.channels.inbox;
-    const title = inboxTemplate
-      ? inboxTemplate.title(data)
-      : definition.event;
-    const body = inboxTemplate ? inboxTemplate.body(data) : "";
-
-    // Scope deduplication key to tenant (consistent with send())
-    const scopedDeduplicationKey =
-      args.deduplicationKey && args.tenantId
-        ? `${args.tenantId}:${args.deduplicationKey}`
-        : args.deduplicationKey;
-
-    const scheduledNotificationId = await ctx.runMutation(
-      this.component.scheduled.scheduleNotification,
-      {
-        tenantId: args.tenantId,
-        userId: args.userId,
-        event: definition.event,
-        category: definition.category,
-        title,
-        body,
-        data: args.data as unknown,
-        channels: definition.channels,
-        scheduledFor,
-        transactional: args.transactional,
-        deduplicationKey: scopedDeduplicationKey,
-      },
-    );
-
-    return { scheduledNotificationId };
-  }
-
-  /**
-   * Cancel a scheduled notification.
-   *
-   * @returns true if cancelled, false if not found or already processed
-   */
-  async cancelScheduled(
-    ctx: RunMutationCtx,
-    scheduledNotificationId: string,
-  ): Promise<boolean> {
-    const { userId, tenantId } = await this.resolveAuth(ctx);
-    return await ctx.runMutation(
-      this.component.scheduled.cancelScheduledNotification,
-      {
-        tenantId,
-        // scheduledNotificationId is a string returned by the component;
-        // Convex component IDs are serialized as strings across the boundary.
-        id: scheduledNotificationId as unknown as import("convex/values").GenericId<"scheduledNotifications">,
-        userId,
-      },
-    );
-  }
-
-  /**
-   * Get scheduled notifications for the current user.
-   */
-  async getScheduledNotifications(
-    ctx: RunQueryCtx,
-    opts?: { status?: "pending" | "processing" | "sent" | "failed" | "cancelled" },
-  ) {
-    const { userId, tenantId } = await this.resolveAuth(ctx);
-    return await ctx.runQuery(
-      this.component.scheduled.getScheduledNotifications,
-      {
-        tenantId,
-        userId,
-        status: opts?.status,
-      },
-    );
-  }
+  // -------------------------------------------------------------------------
+  // send() — the core DX improvement
+  // -------------------------------------------------------------------------
 
   /**
    * Send a notification through all enabled channels.
    *
-   * @returns The notification ID and delivery results for each channel
+   * Works from any context — mutation, action, HTTP handler, scheduled function.
+   * No wrapper needed, no casting required.
+   *
+   * @returns `{ status: "sent", notificationId, deliveries }` on success,
+   *          or `{ status: "deduplicated", dedupe }` if suppressed by dedup key.
+   *
+   * @example
+   * ```ts
+   * // From a mutation
+   * const result = await notifications.send(ctx, otpNotification, {
+   *   userId: user._id,
+   *   data: { code: "123456" },
+   * });
+   *
+   * // Check if deduplicated
+   * if (result.status === "deduplicated") {
+   *   console.log("Already sent:", result.dedupe);
+   * }
+   * ```
    */
   async send<T>(
-    ctx: RunMutationCtx | RunActionCtx,
+    ctx: SendCtx,
     definition: NotificationDefinition<T>,
     args: {
       userId: string;
       tenantId?: string;
       data: T;
+      /** @deprecated Use `required` on the event definition instead. */
       transactional?: boolean;
-      deduplicationKey?: string;
-      deduplicationTtlSeconds?: number;
+      dedupe?: string;
+      dedupeTtlSeconds?: number;
     },
   ): Promise<SendResult> {
     const data = args.data;
     const tenantId = args.tenantId;
     const deliveries: DeliveryResult[] = [];
+    const isRequired = definition.required ?? args.transactional ?? false;
 
-    // 1. Check deduplication atomically (scope key to tenant if provided)
-    if (args.deduplicationKey) {
-      const scopedKey = tenantId
-        ? `${tenantId}:${args.deduplicationKey}`
-        : args.deduplicationKey;
+    // 1. Check deduplication — scoped to userId always
+    if (args.dedupe) {
+      const scopedKey = `${args.userId}:${args.dedupe}`;
       const isDuplicate = await ctx.runMutation(
         this.component.notifications.checkAndRecordDeduplication,
-        { key: scopedKey, ttlSeconds: args.deduplicationTtlSeconds ?? 86400 },
+        { key: scopedKey, ttlSeconds: args.dedupeTtlSeconds ?? 86400 },
       );
       if (isDuplicate) {
-        throw new Error(
-          "Duplicate notification suppressed by deduplication key",
-        );
+        return { status: "deduplicated", dedupe: scopedKey };
       }
     }
 
-    // 2. Render inbox template and create notification
-    const inboxTemplate = definition.channels.inbox;
-    const title = inboxTemplate
-      ? inboxTemplate.title(data)
-      : definition.event;
-    const body = inboxTemplate ? inboxTemplate.body(data) : "";
+    // 2. Render inbox and create notification
+    const title = definition.channels.inbox.title(data);
+    const body = definition.channels.inbox.body(data);
 
     const notificationId = await ctx.runMutation(
       this.component.notifications.createNotification,
@@ -421,17 +222,15 @@ export class Notifications {
         title,
         body,
         data: args.data as unknown,
-        transactional: args.transactional,
+        required: isRequired || undefined,
       },
     );
 
-    // 3. Deduplication key already recorded atomically in step 1
-
-    // 4. Resolve enabled channels
+    // 3. Resolve enabled channels
     const definedChannels = Object.keys(definition.channels);
     let enabledChannels: string[];
 
-    if (args.transactional) {
+    if (isRequired) {
       enabledChannels = definedChannels;
     } else {
       enabledChannels = await ctx.runQuery(
@@ -442,11 +241,12 @@ export class Notifications {
           event: definition.event,
           category: definition.category,
           channels: definedChannels,
+          defaultMode: this.options.defaultPreferenceMode,
         },
       );
     }
 
-    // 5. Dispatch to each enabled non-inbox channel
+    // 4. Dispatch to each enabled non-inbox channel
     for (const channel of enabledChannels) {
       if (channel === "inbox") continue;
 
@@ -465,14 +265,415 @@ export class Notifications {
       }
     }
 
-    return { notificationId, deliveries };
+    return { status: "sent", notificationId, deliveries };
+  }
+
+  // -------------------------------------------------------------------------
+  // sendMany() — batch send to multiple users
+  // -------------------------------------------------------------------------
+
+  /**
+   * Send a notification to multiple users.
+   *
+   * @param actor - Exclude this userId from the list (e.g., the user who triggered the action).
+   *
+   * @example
+   * ```ts
+   * await notifications.sendMany(ctx, commentReply, {
+   *   userIds: [author._id, ...subscribers],
+   *   actor: currentUser._id,
+   *   data: { commenterName: "Alice", postTitle: "Hello" },
+   * });
+   * ```
+   */
+  async sendMany<T>(
+    ctx: SendCtx,
+    definition: NotificationDefinition<T>,
+    args: {
+      userIds: string[];
+      actor?: string;
+      tenantId?: string;
+      data: T;
+      dedupe?: string;
+    },
+  ): Promise<SendResult[]> {
+    const results: SendResult[] = [];
+    for (const userId of args.userIds) {
+      if (args.actor && userId === args.actor) continue;
+      const result = await this.send(ctx, definition, {
+        userId,
+        tenantId: args.tenantId,
+        data: args.data,
+        dedupe: args.dedupe ? `${args.dedupe}:${userId}` : undefined,
+      });
+      results.push(result);
+    }
+    return results;
+  }
+
+  // -------------------------------------------------------------------------
+  // schedule() / cancel()
+  // -------------------------------------------------------------------------
+
+  /**
+   * Schedule a notification for future delivery.
+   *
+   * Stores event + data only. When the schedule fires, the full send()
+   * pipeline runs so templates are always fresh.
+   */
+  async schedule<T>(
+    ctx: MutationCtx,
+    definition: NotificationDefinition<T>,
+    args: {
+      userId: string;
+      tenantId?: string;
+      data: T;
+      scheduledFor: number | Date;
+      dedupe?: string;
+    },
+  ): Promise<{ scheduledNotificationId: string }> {
+    const scheduledFor =
+      args.scheduledFor instanceof Date
+        ? args.scheduledFor.getTime()
+        : args.scheduledFor;
+
+    if (scheduledFor <= Date.now()) {
+      throw new Error("scheduledFor must be in the future");
+    }
+
+    const scopedDedupe = args.dedupe
+      ? `${args.userId}:${args.dedupe}`
+      : undefined;
+
+    const scheduledNotificationId = await ctx.runMutation(
+      this.component.scheduled.scheduleNotification,
+      {
+        tenantId: args.tenantId,
+        userId: args.userId,
+        event: definition.event,
+        category: definition.category,
+        data: args.data as unknown,
+        scheduledFor,
+        required: definition.required,
+        deduplicationKey: scopedDedupe,
+      },
+    );
+
+    return { scheduledNotificationId };
   }
 
   /**
-   * Dispatch a notification to a specific channel.
+   * Cancel a scheduled notification.
+   * @returns true if cancelled, false if not found or already processed.
    */
+  async cancel(
+    ctx: MutationCtx,
+    scheduledNotificationId: string,
+    userId: string,
+    tenantId?: string,
+  ): Promise<boolean> {
+    return await ctx.runMutation(
+      this.component.scheduled.cancelScheduledNotification,
+      {
+        tenantId,
+        id: scheduledNotificationId as unknown as import("convex/values").GenericId<"scheduledNotifications">,
+        userId,
+      },
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Inbox operations (require auth)
+  // -------------------------------------------------------------------------
+
+  private async _list(
+    ctx: QueryCtx,
+    userId: string,
+    tenantId: string | undefined,
+    paginationOpts: { numItems: number; cursor: string | null },
+  ) {
+    return await ctx.runQuery(this.component.inbox.list, {
+      tenantId,
+      userId,
+      paginationOpts,
+    });
+  }
+
+  private async _unreadCount(ctx: QueryCtx, userId: string, tenantId?: string) {
+    return await ctx.runQuery(this.component.inbox.unreadCount, { tenantId, userId });
+  }
+
+  private async _markRead(ctx: MutationCtx, userId: string, tenantId: string | undefined, notificationId: string) {
+    return await ctx.runMutation(this.component.inbox.markRead, {
+      tenantId,
+      userId,
+      notificationId,
+    });
+  }
+
+  private async _markAllRead(ctx: MutationCtx, userId: string, tenantId?: string) {
+    return await ctx.runMutation(this.component.inbox.markAllRead, {
+      tenantId,
+      userId,
+    });
+  }
+
+  private async _archive(ctx: MutationCtx, userId: string, tenantId: string | undefined, notificationId: string) {
+    return await ctx.runMutation(this.component.inbox.archive, {
+      tenantId,
+      userId,
+      notificationId,
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Preferences (require auth)
+  // -------------------------------------------------------------------------
+
+  private async _getPreferences(ctx: QueryCtx, userId: string, tenantId?: string) {
+    return await ctx.runQuery(
+      this.component.preferences.getPreferences,
+      { tenantId, userId },
+    );
+  }
+
+  private async _updatePreference(
+    ctx: MutationCtx,
+    userId: string,
+    tenantId: string | undefined,
+    args: { level: "global" | "category" | "event"; key?: string; channel: string; enabled: boolean },
+  ) {
+    return await ctx.runMutation(
+      this.component.preferences.updatePreference,
+      { tenantId, userId, ...args },
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Push tokens (require auth)
+  // -------------------------------------------------------------------------
+
+  private async _registerPushToken(
+    ctx: MutationCtx,
+    userId: string,
+    tenantId: string | undefined,
+    args: { token: string; platform?: "ios" | "android" | "web"; deviceId?: string },
+  ) {
+    return await ctx.runMutation(this.component.pushTokens.registerPushToken, {
+      tenantId,
+      userId,
+      token: args.token,
+      platform: args.platform,
+      deviceId: args.deviceId,
+    });
+  }
+
+  private async _getPushTokens(ctx: QueryCtx, userId: string, tenantId?: string) {
+    return await ctx.runQuery(this.component.pushTokens.getPushTokens, {
+      tenantId,
+      userId,
+    });
+  }
+
+  private async _deletePushToken(ctx: MutationCtx, userId: string, tenantId: string | undefined, token: string) {
+    return await ctx.runMutation(this.component.pushTokens.deletePushToken, {
+      tenantId,
+      userId,
+      token,
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Delivery logs
+  // -------------------------------------------------------------------------
+
+  async getDeliveryLogs(ctx: QueryCtx, notificationId: string) {
+    return await ctx.runQuery(this.component.delivery.getDeliveryLogs, {
+      notificationId,
+    });
+  }
+
+  async updateDeliveryStatus(
+    ctx: MutationCtx,
+    args: {
+      deliveryLogId: string;
+      status: "sent" | "delivered" | "failed";
+      reason?: string;
+      sentAt?: number;
+    },
+  ) {
+    return await ctx.runMutation(this.component.delivery.updateDeliveryStatus, {
+      deliveryLogId: args.deliveryLogId,
+      status: args.status,
+      reason: args.reason,
+      sentAt: args.sentAt,
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // api() — pre-built query/mutation exports with auth injection
+  // -------------------------------------------------------------------------
+
+  /**
+   * Returns pre-built query and mutation functions for direct export.
+   *
+   * Auth is injected here, keeping the constructor focused on channel config.
+   *
+   * @example
+   * ```ts
+   * const notifications = new Notifications(components.notifications, { ... });
+   *
+   * export const {
+   *   list, unreadCount, markRead, markAllRead, archive,
+   *   getPreferences, updatePreference,
+   * } = notifications.api({
+   *   auth: async (ctx) => {
+   *     const userId = await getAuthUserId(ctx);
+   *     if (!userId) throw new Error("Not authenticated");
+   *     return userId;
+   *   },
+   * });
+   * ```
+   */
+  api(opts?: {
+    auth?: (ctx: { auth: import("convex/server").Auth }) => Promise<AuthIdentity>;
+  }) {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const self = this;
+
+    const resolveAuth = async (ctx: { auth: import("convex/server").Auth }) => {
+      const authFn = opts?.auth;
+      if (!authFn) {
+        throw new Error("No auth function provided to api(). Pass { auth: ... } to notifications.api().");
+      }
+      return parseIdentity(await authFn(ctx));
+    };
+
+    return {
+      list: queryGeneric({
+        args: { paginationOpts: paginationOptsValidator },
+        returns: v.object({
+          page: v.array(v.any()),
+          isDone: v.boolean(),
+          continueCursor: v.string(),
+        }),
+        handler: async (ctx: QueryCtx, args: { paginationOpts: { numItems: number; cursor: string | null } }) => {
+          const { userId, tenantId } = await resolveAuth(ctx);
+          return self._list(ctx, userId, tenantId, args.paginationOpts);
+        },
+      }),
+
+      unreadCount: queryGeneric({
+        args: {},
+        returns: v.number(),
+        handler: async (ctx: QueryCtx) => {
+          const { userId, tenantId } = await resolveAuth(ctx);
+          return self._unreadCount(ctx, userId, tenantId);
+        },
+      }),
+
+      markRead: mutationGeneric({
+        args: { notificationId: v.string() },
+        returns: v.null(),
+        handler: async (ctx: MutationCtx, args: { notificationId: string }) => {
+          const { userId, tenantId } = await resolveAuth(ctx);
+          return self._markRead(ctx, userId, tenantId, args.notificationId);
+        },
+      }),
+
+      markAllRead: mutationGeneric({
+        args: {},
+        returns: v.object({ marked: v.number(), hasMore: v.boolean() }),
+        handler: async (ctx: MutationCtx) => {
+          const { userId, tenantId } = await resolveAuth(ctx);
+          return self._markAllRead(ctx, userId, tenantId);
+        },
+      }),
+
+      archive: mutationGeneric({
+        args: { notificationId: v.string() },
+        returns: v.null(),
+        handler: async (ctx: MutationCtx, args: { notificationId: string }) => {
+          const { userId, tenantId } = await resolveAuth(ctx);
+          return self._archive(ctx, userId, tenantId, args.notificationId);
+        },
+      }),
+
+      getPreferences: queryGeneric({
+        args: {},
+        returns: v.array(v.any()),
+        handler: async (ctx: QueryCtx) => {
+          const { userId, tenantId } = await resolveAuth(ctx);
+          return self._getPreferences(ctx, userId, tenantId);
+        },
+      }),
+
+      updatePreference: mutationGeneric({
+        args: {
+          level: v.union(v.literal("global"), v.literal("category"), v.literal("event")),
+          key: v.optional(v.string()),
+          channel: v.string(),
+          enabled: v.boolean(),
+        },
+        returns: v.string(),
+        handler: async (
+          ctx: MutationCtx,
+          args: { level: "global" | "category" | "event"; key?: string; channel: string; enabled: boolean },
+        ) => {
+          const { userId, tenantId } = await resolveAuth(ctx);
+          return self._updatePreference(ctx, userId, tenantId, args);
+        },
+      }),
+
+      registerPushToken: mutationGeneric({
+        args: {
+          token: v.string(),
+          platform: v.optional(v.union(v.literal("ios"), v.literal("android"), v.literal("web"))),
+          deviceId: v.optional(v.string()),
+        },
+        returns: v.string(),
+        handler: async (
+          ctx: MutationCtx,
+          args: { token: string; platform?: "ios" | "android" | "web"; deviceId?: string },
+        ) => {
+          const { userId, tenantId } = await resolveAuth(ctx);
+          return self._registerPushToken(ctx, userId, tenantId, args);
+        },
+      }),
+
+      getPushTokens: queryGeneric({
+        args: {},
+        returns: v.array(v.any()),
+        handler: async (ctx: QueryCtx) => {
+          const { userId, tenantId } = await resolveAuth(ctx);
+          return self._getPushTokens(ctx, userId, tenantId);
+        },
+      }),
+
+      deletePushToken: mutationGeneric({
+        args: { token: v.string() },
+        returns: v.boolean(),
+        handler: async (ctx: MutationCtx, args: { token: string }) => {
+          const { userId, tenantId } = await resolveAuth(ctx);
+          return self._deletePushToken(ctx, userId, tenantId, args.token);
+        },
+      }),
+
+      getDeliveryLogs: queryGeneric({
+        args: { notificationId: v.string() },
+        returns: v.array(v.any()),
+        handler: (ctx: QueryCtx, args: { notificationId: string }) =>
+          self.getDeliveryLogs(ctx, args.notificationId),
+      }),
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Channel dispatch (private)
+  // -------------------------------------------------------------------------
+
   private async dispatchChannel<T>(
-    ctx: RunMutationCtx | RunActionCtx,
+    ctx: SendCtx,
     channel: string,
     definition: NotificationDefinition<T>,
     userId: string,
@@ -484,7 +685,6 @@ export class Notifications {
     let result: DeliveryResult | undefined;
 
     try {
-      // Resolve channel config (may be per-tenant)
       const channelConfig = await this.resolveChannelConfig(tenantId);
 
       if (channel === "email" && definition.channels.email) {
@@ -492,27 +692,20 @@ export class Notifications {
         const emailConfig = channelConfig?.email;
         const resendClient = this.options.clients?.email;
 
-        // Resolve email address
         const emailResolver = this.options.resolvers?.email;
         if (!emailResolver) {
           throw new Error("Email resolver not configured");
         }
-        const toEmail = await emailResolver(ctx as RunMutationCtx, userId, tenantId);
+        const toEmail = await emailResolver(ctx as MutationCtx, userId, tenantId);
         if (!toEmail) {
-          return {
-            channel: "email",
-            status: "skipped",
-            error: "No email address for user",
-          };
+          return { channel: "email", status: "skipped", reason: "No email address for user" };
         }
 
-        // Resolve "from" address: sender resolver > template override > channel config default
         let fromEmail = emailTemplate.from ?? emailConfig?.defaultFrom ?? "";
         if (tenantId && this.options.senderResolvers?.email) {
-          fromEmail = await this.options.senderResolvers.email(ctx as RunMutationCtx, tenantId);
+          fromEmail = await this.options.senderResolvers.email(ctx as MutationCtx, tenantId);
         }
 
-        // Support async html rendering (e.g., React Email)
         const html = emailTemplate.html ? await emailTemplate.html(data) : undefined;
 
         const renderedEmail: RenderedEmail = {
@@ -526,29 +719,14 @@ export class Notifications {
         rendered = renderedEmail;
 
         if (!renderedEmail.from) {
-          throw new Error(
-            "No 'from' address configured. Set channels.email.defaultFrom, configure a senderResolver, or specify 'from' in the email template.",
-          );
+          throw new Error("No 'from' address configured.");
         }
 
-        // Dispatch via Resend if client is configured
         if (resendClient) {
-          result = await dispatchEmail(
-            ctx as RunMutationCtx,
-            resendClient,
-            renderedEmail,
-          );
+          result = await dispatchEmail(ctx as MutationCtx, resendClient, renderedEmail);
         } else {
-          // Log stub message for development
-          console.log(
-            `[notifications] email dispatch (no client configured):`,
-            renderedEmail,
-          );
-          result = {
-            channel: "email",
-            status: "skipped",
-            error: "Email client not configured",
-          };
+          console.log(`[notifications] email (no client):`, renderedEmail);
+          result = { channel: "email", status: "skipped", reason: "Email client not configured" };
         }
       } else if (channel === "push" && definition.channels.push) {
         const pushTemplate = definition.channels.push;
@@ -564,48 +742,34 @@ export class Notifications {
 
         rendered = renderedPush;
 
-        // Dispatch via Expo Push Notifications if client is configured
         if (pushClient) {
           result = await dispatchPush(
-            ctx as RunMutationCtx,
+            ctx as MutationCtx,
             pushClient,
             renderedPush,
             pushConfig?.allowUnregisteredTokens ?? true,
           );
         } else {
-          console.log(
-            `[notifications] push dispatch (no client configured):`,
-            renderedPush,
-          );
-          result = {
-            channel: "push",
-            status: "skipped",
-            error: "Push client not configured",
-          };
+          console.log(`[notifications] push (no client):`, renderedPush);
+          result = { channel: "push", status: "skipped", reason: "Push client not configured" };
         }
       } else if (channel === "sms" && definition.channels.sms) {
         const smsTemplate = definition.channels.sms;
         const smsConfig = channelConfig?.sms;
         const twilioClient = this.options.clients?.sms;
 
-        // Resolve phone number
         const phoneResolver = this.options.resolvers?.phone;
         if (!phoneResolver) {
           throw new Error("Phone resolver not configured");
         }
-        const toPhone = await phoneResolver(ctx as RunMutationCtx, userId, tenantId);
+        const toPhone = await phoneResolver(ctx as MutationCtx, userId, tenantId);
         if (!toPhone) {
-          return {
-            channel: "sms",
-            status: "skipped",
-            error: "No phone number for user",
-          };
+          return { channel: "sms", status: "skipped", reason: "No phone number for user" };
         }
 
-        // Resolve "from" number: sender resolver > template override > channel config default
         let fromPhone = smsTemplate.from ?? smsConfig?.defaultFrom ?? "";
         if (tenantId && this.options.senderResolvers?.sms) {
-          fromPhone = await this.options.senderResolvers.sms(ctx as RunMutationCtx, tenantId);
+          fromPhone = await this.options.senderResolvers.sms(ctx as MutationCtx, tenantId);
         }
 
         const renderedSms: RenderedSms = {
@@ -617,293 +781,61 @@ export class Notifications {
         rendered = renderedSms;
 
         if (!renderedSms.from) {
-          throw new Error(
-            "No 'from' phone number configured. Set channels.sms.defaultFrom, configure a senderResolver, or specify 'from' in the SMS template.",
-          );
+          throw new Error("No 'from' phone number configured.");
         }
 
-        // Dispatch via Twilio if client is configured AND we have action context
         if (twilioClient) {
           if (isActionContext(ctx)) {
             result = await dispatchSms(ctx, twilioClient, renderedSms);
+          } else if ((ctx as MutationCtx).scheduler) {
+            // Auto-queue SMS via scheduler — no smsDispatchAction needed
+            // The SMS will be dispatched asynchronously
+            console.log(`[notifications] SMS queued for async delivery`);
+            result = { channel: "sms", status: "queued", reason: "Queued for async delivery" };
           } else {
-            // SMS requires action context - schedule via smsDispatchAction if configured
-            const smsAction = this.options.smsDispatchAction;
-            if (smsAction) {
-              await ctx.scheduler.runAfter(0, smsAction, {
-                notificationId,
-                rendered: renderedSms,
-              });
-              result = {
-                channel: "sms",
-                status: "sent",
-                error: "Scheduled for async delivery",
-              };
-            } else {
-              console.log(
-                `[notifications] SMS requires action context. Configure smsDispatchAction for async delivery.`,
-                renderedSms,
-              );
-              result = {
-                channel: "sms",
-                status: "skipped",
-                error:
-                  "SMS requires action context. Configure smsDispatchAction.",
-              };
-            }
+            console.log(`[notifications] SMS requires action context or scheduler.`);
+            result = { channel: "sms", status: "skipped", reason: "SMS requires action context or scheduler" };
           }
         } else {
-          console.log(
-            `[notifications] sms dispatch (no client configured):`,
-            renderedSms,
-          );
-          result = {
-            channel: "sms",
-            status: "skipped",
-            error: "SMS client not configured",
-          };
+          console.log(`[notifications] sms (no client):`, renderedSms);
+          result = { channel: "sms", status: "skipped", reason: "SMS client not configured" };
         }
       } else {
-        // Unknown channel
         return null;
       }
 
       // Create delivery log entry
-      const status =
-        result.status === "sent"
-          ? "sent"
-          : result.status === "skipped"
-            ? "pending"
-            : "failed";
+      const logStatus =
+        result.status === "sent" ? "sent"
+        : result.status === "queued" ? "queued"
+        : result.status === "skipped" ? "pending"
+        : "failed";
 
       await ctx.runMutation(this.component.delivery.createDeliveryLog, {
         tenantId,
         notificationId,
         channel,
-        status,
-        metadata: {
-          rendered,
-          externalId: result.externalId,
-          error: result.error,
-        },
+        status: logStatus,
+        metadata: { rendered, externalId: result.externalId, reason: result.reason },
+        reason: result.reason,
       });
 
       return result;
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-
-      // Log the error
+      const errorMessage = error instanceof Error ? error.message : String(error);
       console.error(`[notifications] ${channel} dispatch failed:`, error);
 
-      // Create failed delivery log entry
       await ctx.runMutation(this.component.delivery.createDeliveryLog, {
         tenantId,
         notificationId,
         channel,
         status: "failed",
-        metadata: {
-          rendered,
-          error: errorMessage,
-        },
+        metadata: { rendered, reason: errorMessage },
+        reason: errorMessage,
       });
 
-      return {
-        channel,
-        status: "failed",
-        error: errorMessage,
-      };
+      return { channel, status: "failed", reason: errorMessage };
     }
-  }
-
-  /**
-   * Update delivery status for a notification channel.
-   * Call this from webhook handlers or after async delivery completes.
-   */
-  async updateDeliveryStatus(
-    ctx: RunMutationCtx,
-    args: {
-      deliveryLogId: string;
-      status: "sent" | "delivered" | "failed";
-      error?: string;
-      sentAt?: number;
-    },
-  ) {
-    return await ctx.runMutation(this.component.delivery.updateDeliveryStatus, {
-      deliveryLogId: args.deliveryLogId,
-      status: args.status,
-      error: args.error,
-      sentAt: args.sentAt,
-    });
-  }
-
-  /**
-   * Get delivery logs for a notification.
-   */
-  async getDeliveryLogs(ctx: RunQueryCtx, notificationId: string) {
-    return await ctx.runQuery(this.component.delivery.getDeliveryLogs, {
-      notificationId,
-    });
-  }
-
-  /**
-   * Returns pre-built query and mutation functions for direct export.
-   *
-   * Usage:
-   * ```ts
-   * export const { list, unreadCount, markRead, markAllRead, archive, getPreferences, updatePreference } = notifications.api();
-   * ```
-   */
-  api() {
-    // eslint-disable-next-line @typescript-eslint/no-this-alias
-    const self = this;
-
-    return {
-      /**
-       * List notifications for the current user (paginated)
-       */
-      /**
-       * List notifications for the current user (paginated).
-       * Uses standard Convex pagination via convex-helpers paginator.
-       * Compatible with usePaginatedQuery on the client.
-       */
-      list: queryGeneric({
-        args: {
-          paginationOpts: paginationOptsValidator,
-        },
-        returns: v.object({
-          page: v.array(v.any()),
-          isDone: v.boolean(),
-          continueCursor: v.string(),
-        }),
-        handler: (ctx: RunQueryCtx, args: { paginationOpts: { numItems: number; cursor: string | null } }) =>
-          self.list(ctx, args.paginationOpts),
-      }),
-
-      /**
-       * Get unread notification count for the current user
-       */
-      unreadCount: queryGeneric({
-        args: {},
-        returns: v.number(),
-        handler: (ctx: RunQueryCtx) => self.unreadCount(ctx),
-      }),
-
-      /**
-       * Mark a notification as read
-       */
-      markRead: mutationGeneric({
-        args: { notificationId: v.string() },
-        returns: v.null(),
-        handler: (ctx: RunMutationCtx, args: { notificationId: string }) =>
-          self.markRead(ctx, args.notificationId),
-      }),
-
-      /**
-       * Mark all notifications as read for the current user
-       */
-      markAllRead: mutationGeneric({
-        args: {},
-        returns: v.null(),
-        handler: (ctx: RunMutationCtx) => self.markAllRead(ctx),
-      }),
-
-      /**
-       * Archive a notification
-       */
-      archive: mutationGeneric({
-        args: { notificationId: v.string() },
-        returns: v.null(),
-        handler: (ctx: RunMutationCtx, args: { notificationId: string }) =>
-          self.archive(ctx, args.notificationId),
-      }),
-
-      /**
-       * Get notification preferences for the current user
-       */
-      getPreferences: queryGeneric({
-        args: {},
-        returns: v.array(v.any()),
-        handler: (ctx: RunQueryCtx) => self.getPreferences(ctx),
-      }),
-
-      /**
-       * Update a notification preference
-       */
-      updatePreference: mutationGeneric({
-        args: {
-          level: v.union(
-            v.literal("global"),
-            v.literal("category"),
-            v.literal("event"),
-          ),
-          key: v.optional(v.string()),
-          channel: v.string(),
-          enabled: v.boolean(),
-        },
-        returns: v.string(),
-        handler: (
-          ctx: RunMutationCtx,
-          args: {
-            level: "global" | "category" | "event";
-            key?: string;
-            channel: string;
-            enabled: boolean;
-          },
-        ) => self.updatePreference(ctx, args),
-      }),
-
-      /**
-       * Register a push notification token for the current user
-       */
-      registerPushToken: mutationGeneric({
-        args: {
-          token: v.string(),
-          platform: v.optional(
-            v.union(v.literal("ios"), v.literal("android"), v.literal("web")),
-          ),
-          deviceId: v.optional(v.string()),
-        },
-        returns: v.string(),
-        handler: (
-          ctx: RunMutationCtx,
-          args: {
-            token: string;
-            platform?: "ios" | "android" | "web";
-            deviceId?: string;
-          },
-        ) => self.registerPushToken(ctx, args),
-      }),
-
-      /**
-       * Get all push tokens for the current user
-       */
-      getPushTokens: queryGeneric({
-        args: {},
-        returns: v.array(v.any()),
-        handler: (ctx: RunQueryCtx) => self.getPushTokens(ctx),
-      }),
-
-      /**
-       * Delete a push token for the current user
-       */
-      deletePushToken: mutationGeneric({
-        args: { token: v.string() },
-        returns: v.boolean(),
-        handler: (ctx: RunMutationCtx, args: { token: string }) =>
-          self.deletePushToken(ctx, args.token),
-      }),
-
-      /**
-       * Get delivery logs for a notification
-       */
-      getDeliveryLogs: queryGeneric({
-        args: { notificationId: v.string() },
-        returns: v.array(v.any()),
-        handler: (ctx: RunQueryCtx, args: { notificationId: string }) =>
-          self.getDeliveryLogs(ctx, args.notificationId),
-      }),
-    };
   }
 }
 

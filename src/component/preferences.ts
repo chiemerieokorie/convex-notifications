@@ -37,7 +37,6 @@ export const updatePreference = internalMutation({
   },
   returns: v.id("preferences"),
   handler: async (ctx, args) => {
-    // Find existing preference
     const q = args.tenantId !== undefined
       ? ctx.db
           .query("preferences")
@@ -69,6 +68,14 @@ export const updatePreference = internalMutation({
   },
 });
 
+/**
+ * Resolve which channels are enabled for a user + event.
+ *
+ * Resolution order: event > category > global > defaultMode.
+ *
+ * @param defaultMode - "opt-out" means channels are enabled by default,
+ *                      "opt-in" means channels are disabled by default.
+ */
 export const resolvePreferences = internalQuery({
   args: {
     tenantId: v.optional(v.string()),
@@ -76,9 +83,11 @@ export const resolvePreferences = internalQuery({
     event: v.string(),
     category: v.optional(v.string()),
     channels: v.array(v.string()),
+    defaultMode: v.optional(v.union(v.literal("opt-in"), v.literal("opt-out"))),
   },
   returns: v.array(v.string()),
   handler: async (ctx, args) => {
+    const defaultMode = args.defaultMode ?? "opt-out";
     const q = args.tenantId !== undefined
       ? ctx.db
           .query("preferences")
@@ -126,8 +135,11 @@ export const resolvePreferences = internalQuery({
         continue;
       }
 
-      // 4. Default: enabled
-      enabled.push(channel);
+      // 4. Default mode
+      if (defaultMode === "opt-out") {
+        enabled.push(channel);
+      }
+      // opt-in: channel stays disabled (not added)
     }
 
     return enabled;

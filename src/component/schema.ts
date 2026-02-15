@@ -11,7 +11,8 @@ export default defineSchema({
     data: v.optional(v.any()),
     readAt: v.optional(v.number()),
     archivedAt: v.optional(v.number()),
-    transactional: v.optional(v.boolean()),
+    /** When true, this notification bypassed user preferences. */
+    required: v.optional(v.boolean()),
   })
     .index("by_userId", ["userId", "_creationTime"])
     .index("by_userId_unread", ["userId", "readAt"])
@@ -48,14 +49,16 @@ export default defineSchema({
     channel: v.string(),
     status: v.union(
       v.literal("pending"),
+      v.literal("queued"),
       v.literal("sent"),
       v.literal("delivered"),
       v.literal("failed"),
     ),
-    error: v.optional(v.string()),
+    /** Human-readable reason for the current status. */
+    reason: v.optional(v.string()),
     sentAt: v.optional(v.number()),
     metadata: v.optional(v.any()),
-    // External ID from delivery provider (e.g., Resend email ID, Twilio message SID)
+    /** External ID from delivery provider (Resend email ID, Twilio SID). */
     externalId: v.optional(v.string()),
   })
     .index("by_notificationId", ["notificationId"])
@@ -75,20 +78,17 @@ export default defineSchema({
     .index("by_tenantId_token", ["tenantId", "token"]),
 
   /**
-   * Scheduled notifications waiting to be sent.
-   * Processed by a cron job that dispatches them when scheduledFor time is reached.
+   * Scheduled notifications — stores event + data only (not rendered templates).
+   * When the schedule fires, the full send() pipeline runs from scratch.
    */
   scheduledNotifications: defineTable({
     tenantId: v.optional(v.string()),
     userId: v.string(),
     event: v.string(),
     category: v.optional(v.string()),
-    title: v.string(),
-    body: v.string(),
     data: v.optional(v.any()),
-    channels: v.any(), // Channel templates
-    scheduledFor: v.number(), // Timestamp when to send
-    transactional: v.optional(v.boolean()),
+    scheduledFor: v.number(),
+    required: v.optional(v.boolean()),
     deduplicationKey: v.optional(v.string()),
     status: v.union(
       v.literal("pending"),
@@ -97,7 +97,7 @@ export default defineSchema({
       v.literal("failed"),
       v.literal("cancelled"),
     ),
-    error: v.optional(v.string()),
+    reason: v.optional(v.string()),
     processedAt: v.optional(v.number()),
   })
     .index("by_status_scheduledFor", ["status", "scheduledFor"])
@@ -106,7 +106,6 @@ export default defineSchema({
 
   /**
    * Retry queue for failed deliveries.
-   * Used by the workflow component to retry failed channel dispatches.
    */
   retryQueue: defineTable({
     tenantId: v.optional(v.string()),
@@ -123,7 +122,6 @@ export default defineSchema({
       v.literal("exhausted"),
     ),
     lastError: v.optional(v.string()),
-    // Rendered content to retry
     rendered: v.any(),
   })
     .index("by_status_nextRetryAt", ["status", "nextRetryAt"])
@@ -138,13 +136,13 @@ export default defineSchema({
     tenantId: v.optional(v.string()),
     notificationId: v.id("notifications"),
     userId: v.string(),
-    fromChannel: v.string(), // e.g., "push"
-    toChannel: v.string(), // e.g., "email"
-    fallbackAt: v.number(), // When to trigger fallback
+    fromChannel: v.string(),
+    toChannel: v.string(),
+    fallbackAt: v.number(),
     status: v.union(
       v.literal("pending"),
-      v.literal("cancelled"), // User read the notification
-      v.literal("triggered"), // Fallback was sent
+      v.literal("cancelled"),
+      v.literal("triggered"),
     ),
     triggeredAt: v.optional(v.number()),
   })

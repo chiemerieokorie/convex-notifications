@@ -1,20 +1,21 @@
 import { describe, expect, test, vi, beforeEach, afterEach } from "vitest";
 import { anyApi, type ApiFromModules } from "convex/server";
-import { mutationGeneric, queryGeneric } from "convex/server";
+import { mutationGeneric } from "convex/server";
 import { components, initConvexTest } from "./setup.test.js";
-import { Notifications } from "./index.js";
-import type { NotificationDefinition } from "./types.js";
+import { Notifications, defineEvent } from "./index.js";
 import { v } from "convex/values";
 
-// Instantiate class
-const notifications = new Notifications(components.notifications, {
-  auth: async (ctx) => {
-    return (await ctx.auth.getUserIdentity())?.subject ?? "anonymous";
-  },
-});
+// ---------------------------------------------------------------------------
+// Setup — no auth in constructor, just channel config
+// ---------------------------------------------------------------------------
 
-// Test notification definition
-const testEventDef: NotificationDefinition<{ message: string }> = {
+const notifications = new Notifications(components.notifications, {});
+
+// ---------------------------------------------------------------------------
+// Event definitions using defineEvent()
+// ---------------------------------------------------------------------------
+
+const testEventDef = defineEvent({
   event: "test.event",
   dataValidator: v.object({ message: v.string() }),
   category: "testing",
@@ -28,10 +29,9 @@ const testEventDef: NotificationDefinition<{ message: string }> = {
       body: (data) => data.message,
     },
   },
-};
+});
 
-// Test notification with HTML email (React Email pattern)
-const htmlEmailDef: NotificationDefinition<{ userName: string }> = {
+const htmlEmailDef = defineEvent({
   event: "test.html-email",
   dataValidator: v.object({ userName: v.string() }),
   category: "testing",
@@ -46,10 +46,9 @@ const htmlEmailDef: NotificationDefinition<{ userName: string }> = {
       html: (data) => `<h1>Welcome, ${data.userName}!</h1><p>Thanks for joining.</p>`,
     },
   },
-};
+});
 
-// Test notification with async HTML email (simulating React Email render())
-const asyncHtmlEmailDef: NotificationDefinition<{ userName: string }> = {
+const asyncHtmlEmailDef = defineEvent({
   event: "test.async-html-email",
   dataValidator: v.object({ userName: v.string() }),
   category: "testing",
@@ -61,15 +60,28 @@ const asyncHtmlEmailDef: NotificationDefinition<{ userName: string }> = {
     email: {
       subject: (data) => `Hello ${data.userName}`,
       body: (data) => `Hello ${data.userName}`,
-      html: async (data) => {
-        // Simulates React Email's render() which returns a Promise
-        return `<html><body><h1>Hello ${data.userName}</h1></body></html>`;
-      },
+      html: async (data) => `<html><body><h1>Hello ${data.userName}</h1></body></html>`,
     },
   },
-};
+});
 
-// Use the new api() method for plug-and-play exports
+const requiredDef = defineEvent({
+  event: "test.required",
+  dataValidator: v.object({ message: v.string() }),
+  category: "security",
+  required: true,
+  channels: {
+    inbox: {
+      title: () => "Security Alert",
+      body: (data) => data.message,
+    },
+  },
+});
+
+// ---------------------------------------------------------------------------
+// API exports — auth injected here
+// ---------------------------------------------------------------------------
+
 export const {
   list,
   unreadCount,
@@ -78,28 +90,14 @@ export const {
   archive,
   getPreferences,
   updatePreference,
-} = notifications.api();
-
-// Push token management
-export const registerPushToken = mutationGeneric({
-  args: {
-    token: v.string(),
-    platform: v.optional(v.union(v.literal("ios"), v.literal("android"), v.literal("web"))),
-    deviceId: v.optional(v.string()),
+  registerPushToken,
+  getPushTokens,
+  deletePushToken,
+  getDeliveryLogs,
+} = notifications.api({
+  auth: async (ctx) => {
+    return (await ctx.auth.getUserIdentity())?.subject ?? "anonymous";
   },
-  handler: (ctx, args) => notifications.registerPushToken(ctx, args),
-});
-
-export const getPushTokens = queryGeneric({
-  args: {},
-  returns: v.array(v.any()),
-  handler: (ctx) => notifications.getPushTokens(ctx),
-});
-
-export const deletePushToken = mutationGeneric({
-  args: { token: v.string() },
-  returns: v.boolean(),
-  handler: (ctx, args) => notifications.deletePushToken(ctx, args.token),
 });
 
 // The send mutation is custom since it requires a notification definition
@@ -108,27 +106,29 @@ export const send = mutationGeneric({
     userId: v.string(),
     data: v.any(),
     transactional: v.optional(v.boolean()),
-    deduplicationKey: v.optional(v.string()),
-    deduplicationTtlSeconds: v.optional(v.number()),
+    dedupe: v.optional(v.string()),
+    dedupeTtlSeconds: v.optional(v.number()),
   },
   handler: (ctx, args) =>
     notifications.send(ctx, testEventDef, {
       userId: args.userId,
       data: args.data as { message: string },
       transactional: args.transactional,
-      deduplicationKey: args.deduplicationKey,
-      deduplicationTtlSeconds: args.deduplicationTtlSeconds,
+      dedupe: args.dedupe,
+      dedupeTtlSeconds: args.dedupeTtlSeconds,
     }),
 });
 
-export const getDeliveryLogs = queryGeneric({
-  args: { notificationId: v.string() },
-  returns: v.array(v.any()),
-  handler: async (ctx, args) => {
-    return await ctx.runQuery(components.notifications.delivery.getDeliveryLogs, {
-      notificationId: args.notificationId as string,
-    });
+export const sendRequired = mutationGeneric({
+  args: {
+    userId: v.string(),
+    data: v.object({ message: v.string() }),
   },
+  handler: (ctx, args) =>
+    notifications.send(ctx, requiredDef, {
+      userId: args.userId,
+      data: args.data,
+    }),
 });
 
 export const sendHtmlEmail = mutationGeneric({
@@ -169,6 +169,7 @@ const testApi = (
       getPushTokens: typeof getPushTokens;
       deletePushToken: typeof deletePushToken;
       send: typeof send;
+      sendRequired: typeof sendRequired;
       getDeliveryLogs: typeof getDeliveryLogs;
       sendHtmlEmail: typeof sendHtmlEmail;
       sendAsyncHtmlEmail: typeof sendAsyncHtmlEmail;
@@ -191,7 +192,10 @@ describe("client integration", () => {
       userId: "user1",
       data: { message: "Hello, world!" },
     });
-    expect(result.notificationId).toBeDefined();
+    expect(result.status).toBe("sent");
+    if (result.status === "sent") {
+      expect(result.notificationId).toBeDefined();
+    }
 
     const listResult = await t.query(testApi.list, { paginationOpts: { numItems: 20, cursor: null } });
     expect(listResult.page).toHaveLength(1);
@@ -208,7 +212,9 @@ describe("client integration", () => {
 
     expect(await t.query(testApi.unreadCount, {})).toBe(1);
 
-    await t.mutation(testApi.markRead, { notificationId: result.notificationId });
+    if (result.status === "sent") {
+      await t.mutation(testApi.markRead, { notificationId: result.notificationId });
+    }
     expect(await t.query(testApi.unreadCount, {})).toBe(0);
   });
 
@@ -226,7 +232,9 @@ describe("client integration", () => {
 
     expect(await t.query(testApi.unreadCount, {})).toBe(2);
 
-    await t.mutation(testApi.markAllRead, {});
+    const markResult = await t.mutation(testApi.markAllRead, {});
+    expect(markResult.marked).toBe(2);
+    expect(markResult.hasMore).toBe(false);
     expect(await t.query(testApi.unreadCount, {})).toBe(0);
   });
 
@@ -238,7 +246,9 @@ describe("client integration", () => {
       data: { message: "Test" },
     });
 
-    await t.mutation(testApi.archive, { notificationId: sendResult.notificationId });
+    if (sendResult.status === "sent") {
+      await t.mutation(testApi.archive, { notificationId: sendResult.notificationId });
+    }
 
     const result = await t.query(testApi.list, { paginationOpts: { numItems: 20, cursor: null } });
     expect(result.page).toHaveLength(0);
@@ -259,48 +269,44 @@ describe("client integration", () => {
     expect(prefs[0].enabled).toBe(false);
   });
 
-  test("deduplication prevents duplicate sends", async () => {
+  test("deduplication returns deduplicated status instead of throwing", async () => {
     const t = initConvexTest().withIdentity({ subject: "user1" });
 
-    await t.mutation(testApi.send, {
+    const first = await t.mutation(testApi.send, {
       userId: "user1",
       data: { message: "First" },
-      deduplicationKey: "unique-key",
+      dedupe: "unique-key",
     });
+    expect(first.status).toBe("sent");
 
-    await expect(
-      t.mutation(testApi.send, {
-        userId: "user1",
-        data: { message: "Duplicate" },
-        deduplicationKey: "unique-key",
-      }),
-    ).rejects.toThrow("Duplicate notification suppressed");
+    const second = await t.mutation(testApi.send, {
+      userId: "user1",
+      data: { message: "Duplicate" },
+      dedupe: "unique-key",
+    });
+    expect(second.status).toBe("deduplicated");
+    if (second.status === "deduplicated") {
+      expect(second.dedupe).toContain("user1:");
+    }
   });
 
-  test("transactional bypasses preferences", async () => {
+  test("required notifications bypass preferences", async () => {
     const t = initConvexTest().withIdentity({ subject: "user1" });
 
-    // Disable all channels globally
+    // Disable inbox globally
     await t.mutation(testApi.updatePreference, {
       level: "global",
       channel: "inbox",
       enabled: false,
     });
-    await t.mutation(testApi.updatePreference, {
-      level: "global",
-      channel: "email",
-      enabled: false,
-    });
 
-    // Transactional still creates the notification
-    const result = await t.mutation(testApi.send, {
+    // Required notification still creates the inbox record
+    const result = await t.mutation(testApi.sendRequired, {
       userId: "user1",
       data: { message: "Security alert" },
-      transactional: true,
     });
-    expect(result.notificationId).toBeDefined();
+    expect(result.status).toBe("sent");
 
-    // Notification was still created in inbox
     const listResult = await t.query(testApi.list, { paginationOpts: { numItems: 20, cursor: null } });
     expect(listResult.page).toHaveLength(1);
   });
@@ -323,22 +329,18 @@ describe("client integration", () => {
   test("registerPushToken updates existing token", async () => {
     const t = initConvexTest().withIdentity({ subject: "user1" });
 
-    // Register first time
     const tokenId1 = await t.mutation(testApi.registerPushToken, {
       token: "ExponentPushToken[abc123]",
       platform: "ios",
     });
 
-    // Register same token again with different platform
     const tokenId2 = await t.mutation(testApi.registerPushToken, {
       token: "ExponentPushToken[abc123]",
       platform: "android",
     });
 
-    // Should be same ID (upserted)
     expect(tokenId2).toBe(tokenId1);
 
-    // Should still only have one token
     const tokens = await t.query(testApi.getPushTokens, {});
     expect(tokens).toHaveLength(1);
     expect(tokens[0].platform).toBe("android");
@@ -365,16 +367,13 @@ describe("client integration", () => {
       token: "ExponentPushToken[abc123]",
     });
 
-    const tokensBeforeDelete = await t.query(testApi.getPushTokens, {});
-    expect(tokensBeforeDelete).toHaveLength(1);
-
     const deleted = await t.mutation(testApi.deletePushToken, {
       token: "ExponentPushToken[abc123]",
     });
     expect(deleted).toBe(true);
 
-    const tokensAfterDelete = await t.query(testApi.getPushTokens, {});
-    expect(tokensAfterDelete).toHaveLength(0);
+    const tokens = await t.query(testApi.getPushTokens, {});
+    expect(tokens).toHaveLength(0);
   });
 
   test("deletePushToken returns false for non-existent token", async () => {
@@ -397,19 +396,14 @@ describe("client integration", () => {
     const t1 = initConvexTest().withIdentity({ subject: "user1" });
     const t2 = initConvexTest().withIdentity({ subject: "user2" });
 
-    await t1.mutation(testApi.registerPushToken, {
-      token: "User1Token",
-    });
-    await t2.mutation(testApi.registerPushToken, {
-      token: "User2Token",
-    });
+    await t1.mutation(testApi.registerPushToken, { token: "User1Token" });
+    await t2.mutation(testApi.registerPushToken, { token: "User2Token" });
 
     const user1Tokens = await t1.query(testApi.getPushTokens, {});
     const user2Tokens = await t2.query(testApi.getPushTokens, {});
 
     expect(user1Tokens).toHaveLength(1);
     expect(user1Tokens[0].token).toBe("User1Token");
-
     expect(user2Tokens).toHaveLength(1);
     expect(user2Tokens[0].token).toBe("User2Token");
   });
@@ -421,9 +415,8 @@ describe("client integration", () => {
       userId: "user1",
       data: { userName: "Alice" },
     });
-    expect(result.notificationId).toBeDefined();
+    expect(result.status).toBe("sent");
 
-    // Notification should be in inbox with rendered title
     const listResult = await t.query(testApi.list, { paginationOpts: { numItems: 20, cursor: null } });
     expect(listResult.page).toHaveLength(1);
     expect(listResult.page[0].title).toBe("Welcome, Alice!");
@@ -437,11 +430,32 @@ describe("client integration", () => {
       userId: "user1",
       data: { userName: "Bob" },
     });
-    expect(result.notificationId).toBeDefined();
+    expect(result.status).toBe("sent");
 
-    // Notification should be in inbox
     const listResult = await t.query(testApi.list, { paginationOpts: { numItems: 20, cursor: null } });
     expect(listResult.page).toHaveLength(1);
     expect(listResult.page[0].title).toBe("Hello, Bob");
+  });
+
+  test("defineEvent validates event name", () => {
+    expect(() =>
+      defineEvent({
+        event: "",
+        dataValidator: v.object({}),
+        channels: {
+          inbox: { title: () => "", body: () => "" },
+        },
+      }),
+    ).toThrow("non-empty");
+  });
+
+  test("defineEvent validates inbox channel", () => {
+    expect(() =>
+      defineEvent({
+        event: "test",
+        dataValidator: v.object({}),
+        channels: {} as any,
+      }),
+    ).toThrow("inbox");
   });
 });

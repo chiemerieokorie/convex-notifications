@@ -1,10 +1,8 @@
 /**
  * Scheduled notifications handling.
  *
- * This module provides:
- * - Functions to schedule notifications for future delivery
- * - Cron handler to process scheduled notifications
- * - Functions to cancel or modify scheduled notifications
+ * Stores event + data only — no rendered templates. When the schedule fires,
+ * the full send() pipeline runs from scratch so templates are always fresh.
  */
 
 import { v } from "convex/values";
@@ -20,17 +18,13 @@ export const scheduleNotification = internalMutation({
     userId: v.string(),
     event: v.string(),
     category: v.optional(v.string()),
-    title: v.string(),
-    body: v.string(),
     data: v.optional(v.any()),
-    channels: v.any(),
     scheduledFor: v.number(),
-    transactional: v.optional(v.boolean()),
+    required: v.optional(v.boolean()),
     deduplicationKey: v.optional(v.string()),
   },
   returns: v.id("scheduledNotifications"),
   handler: async (ctx, args) => {
-    // Validate scheduledFor is in the future
     const now = Date.now();
     if (args.scheduledFor <= now) {
       throw new Error("scheduledFor must be in the future");
@@ -41,12 +35,9 @@ export const scheduleNotification = internalMutation({
       userId: args.userId,
       event: args.event,
       category: args.category,
-      title: args.title,
-      body: args.body,
       data: args.data,
-      channels: args.channels,
       scheduledFor: args.scheduledFor,
-      transactional: args.transactional,
+      required: args.required,
       deduplicationKey: args.deduplicationKey,
       status: "pending",
     });
@@ -88,9 +79,7 @@ export const markScheduledProcessing = internalMutation({
       return false;
     }
 
-    await ctx.db.patch(args.id, {
-      status: "processing",
-    });
+    await ctx.db.patch(args.id, { status: "processing" });
     return true;
   },
 });
@@ -119,13 +108,13 @@ export const markScheduledSent = internalMutation({
 export const markScheduledFailed = internalMutation({
   args: {
     id: v.id("scheduledNotifications"),
-    error: v.string(),
+    reason: v.string(),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
     await ctx.db.patch(args.id, {
       status: "failed",
-      error: args.error,
+      reason: args.reason,
       processedAt: Date.now(),
     });
     return null;
@@ -139,22 +128,18 @@ export const cancelScheduledNotification = internalMutation({
   args: {
     tenantId: v.optional(v.string()),
     id: v.id("scheduledNotifications"),
-    userId: v.string(), // For permission check
+    userId: v.string(),
   },
   returns: v.boolean(),
   handler: async (ctx, args) => {
     const notification = await ctx.db.get(args.id);
 
-    // Permission check
     if (!notification || notification.userId !== args.userId) {
       return false;
     }
-    // Cross-check tenantId for multi-tenant isolation
     if (args.tenantId !== undefined && notification.tenantId !== args.tenantId) {
       return false;
     }
-
-    // Can only cancel pending notifications
     if (notification.status !== "pending") {
       return false;
     }

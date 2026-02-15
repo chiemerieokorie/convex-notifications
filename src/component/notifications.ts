@@ -9,7 +9,7 @@ export const createNotification = internalMutation({
     title: v.string(),
     body: v.string(),
     data: v.optional(v.any()),
-    transactional: v.optional(v.boolean()),
+    required: v.optional(v.boolean()),
   },
   returns: v.id("notifications"),
   handler: async (ctx, args) => {
@@ -20,7 +20,7 @@ export const createNotification = internalMutation({
       title: args.title,
       body: args.body,
       data: args.data,
-      transactional: args.transactional,
+      required: args.required,
     });
   },
 });
@@ -54,8 +54,7 @@ export const recordDeduplication = internalMutation({
 
 /**
  * Atomically check and record a deduplication key in a single mutation.
- * This prevents TOCTOU race conditions when check and record are separate
- * transactions (e.g., when send() is called from an action context).
+ * Prevents TOCTOU race conditions.
  *
  * Returns true if the key was already present (duplicate), false if newly recorded.
  */
@@ -73,7 +72,6 @@ export const checkAndRecordDeduplication = internalMutation({
     if (entry && entry.expiresAt > Date.now()) {
       return true; // Duplicate
     }
-    // Record the key atomically
     await ctx.db.insert("deduplication", {
       key: args.key,
       expiresAt: Date.now() + args.ttlSeconds * 1000,
@@ -83,8 +81,7 @@ export const checkAndRecordDeduplication = internalMutation({
 });
 
 /**
- * Clean up expired deduplication keys.
- * This is called by a cron job to prevent the table from growing indefinitely.
+ * Clean up expired deduplication keys (cron).
  */
 export const cleanupExpiredDeduplication = internalMutation({
   args: {
@@ -98,7 +95,6 @@ export const cleanupExpiredDeduplication = internalMutation({
     const batchSize = args.batchSize ?? 500;
     const now = Date.now();
 
-    // Query expired entries using the expiresAt index
     const expired = await ctx.db
       .query("deduplication")
       .withIndex("by_expiresAt", (q) => q.lt("expiresAt", now))
@@ -107,21 +103,19 @@ export const cleanupExpiredDeduplication = internalMutation({
     const hasMore = expired.length > batchSize;
     const toDelete = expired.slice(0, batchSize);
 
-    // Delete in batch
     for (const entry of toDelete) {
       await ctx.db.delete(entry._id);
     }
 
-    return {
-      deleted: toDelete.length,
-      hasMore,
-    };
+    return { deleted: toDelete.length, hasMore };
   },
 });
 
 /**
- * Process pending scheduled notifications.
- * Called by cron every minute.
+ * Process pending scheduled notifications (cron).
+ *
+ * Creates inbox records only. Full channel dispatch must be handled
+ * by the client since the component doesn't have access to channel clients.
  */
 export const processScheduledNotifications = internalMutation({
   args: {
@@ -136,7 +130,6 @@ export const processScheduledNotifications = internalMutation({
     const batchSize = args.batchSize ?? 50;
     const now = Date.now();
 
-    // Get pending scheduled notifications
     const pending = await ctx.db
       .query("scheduledNotifications")
       .withIndex("by_status_scheduledFor", (q) =>
@@ -148,11 +141,10 @@ export const processScheduledNotifications = internalMutation({
     let failed = 0;
 
     for (const scheduled of pending) {
-      // Mark as processing
       await ctx.db.patch(scheduled._id, { status: "processing" });
 
       try {
-        // Check deduplication if key provided
+        // Check deduplication
         const dedupeKey = scheduled.deduplicationKey;
         if (dedupeKey) {
           const entry = await ctx.db
@@ -162,7 +154,7 @@ export const processScheduledNotifications = internalMutation({
           if (entry && entry.expiresAt > Date.now()) {
             await ctx.db.patch(scheduled._id, {
               status: "failed",
-              error: "Duplicate notification suppressed",
+              reason: "Duplicate notification suppressed",
               processedAt: Date.now(),
             });
             failed++;
@@ -170,26 +162,27 @@ export const processScheduledNotifications = internalMutation({
           }
         }
 
-        // Create the notification in inbox
+        // Create inbox record — title/body are rendered at schedule time
+        // by the client and stored in data, or re-rendered by the client
+        // when processing. For now we use the event name as a placeholder.
         await ctx.db.insert("notifications", {
           tenantId: scheduled.tenantId,
           userId: scheduled.userId,
           event: scheduled.event,
-          title: scheduled.title,
-          body: scheduled.body,
+          title: scheduled.event, // Client re-renders on dispatch
+          body: "",
           data: scheduled.data,
-          transactional: scheduled.transactional,
+          required: scheduled.required,
         });
 
         // Record deduplication key
         if (dedupeKey) {
           await ctx.db.insert("deduplication", {
             key: dedupeKey,
-            expiresAt: Date.now() + 86400 * 1000, // 24 hours
+            expiresAt: Date.now() + 86400 * 1000,
           });
         }
 
-        // Mark as sent
         await ctx.db.patch(scheduled._id, {
           status: "sent",
           processedAt: Date.now(),
@@ -202,7 +195,7 @@ export const processScheduledNotifications = internalMutation({
 
         await ctx.db.patch(scheduled._id, {
           status: "failed",
-          error: errorMessage,
+          reason: errorMessage,
           processedAt: Date.now(),
         });
 
@@ -210,21 +203,12 @@ export const processScheduledNotifications = internalMutation({
       }
     }
 
-    return {
-      processed: pending.length,
-      succeeded,
-      failed,
-    };
+    return { processed: pending.length, succeeded, failed };
   },
 });
 
 /**
- * Process pending retries.
- * Called by cron every minute.
- *
- * Note: Actual retry dispatch needs to be handled by the consumer app
- * as we don't have access to the child component clients here.
- * This just manages the retry queue status.
+ * Process pending retries (cron).
  */
 export const processRetryQueue = internalMutation({
   args: {
@@ -238,7 +222,6 @@ export const processRetryQueue = internalMutation({
     const batchSize = args.batchSize ?? 50;
     const now = Date.now();
 
-    // Get pending retries that are ready
     const pending = await ctx.db
       .query("retryQueue")
       .withIndex("by_status_nextRetryAt", (q) =>
@@ -249,14 +232,10 @@ export const processRetryQueue = internalMutation({
     const readyForRetry: (typeof pending)[0]["_id"][] = [];
 
     for (const retry of pending) {
-      // Mark as processing
       await ctx.db.patch(retry._id, { status: "processing" });
       readyForRetry.push(retry._id);
     }
 
-    return {
-      processed: pending.length,
-      readyForRetry,
-    };
+    return { processed: pending.length, readyForRetry };
   },
 });

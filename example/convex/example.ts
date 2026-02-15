@@ -1,124 +1,15 @@
 import { components } from "./_generated/api.js";
-import { query, mutation } from "./_generated/server.js";
-import { Notifications, createNotification } from "convex-notifications";
-import type { RunMutationCtx } from "convex-notifications";
+import { mutation, internalMutation } from "./_generated/server.js";
+import { Notifications, defineEvent } from "convex-notifications";
 import { v } from "convex/values";
 import type { Auth } from "convex/server";
 
-/**
- * ============================================================================
- * CHANNEL CONFIGURATION
- * ============================================================================
- *
- * To enable channel delivery (email, push, SMS), you need to:
- *
- * 1. Register child components in convex.config.ts:
- *
- *    import pushNotifications from "@convex-dev/expo-push-notifications/convex.config.js";
- *    import resend from "@convex-dev/resend/convex.config.js";
- *    import twilio from "@convex-dev/twilio/convex.config.js";
- *
- *    app.use(pushNotifications);
- *    app.use(resend);
- *    app.use(twilio);
- *
- * 2. Run codegen: npx convex dev (or npm run build:codegen)
- *
- * 3. Instantiate the clients and pass them to Notifications:
- *
- *    import { PushNotifications } from "@convex-dev/expo-push-notifications";
- *    import { Resend } from "@convex-dev/resend";
- *    import { Twilio } from "@convex-dev/twilio";
- *
- *    const pushClient = new PushNotifications(components.pushNotifications);
- *    const resendClient = new Resend(components.resend);
- *    const twilioClient = new Twilio(components.twilio, {
- *      defaultFrom: "+1234567890",
- *    });
- *
- *    const notifications = new Notifications(components.notifications, {
- *      // ... other options ...
- *      clients: {
- *        email: resendClient,
- *        push: pushClient,
- *        sms: twilioClient,
- *      },
- *    });
- *
- * 4. Set environment variables:
- *    - RESEND_API_KEY for email delivery
- *    - TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN for SMS delivery
- *
- * ============================================================================
- */
+// =============================================================================
+// 1. Create the Notifications client — no auth here, just channel config.
+// =============================================================================
 
-// --- Setup ---
-
-// === SINGLE-TENANT SETUP (backwards compatible) ===
-// For a single-tenant app, auth returns a simple userId string:
-//
-//   async function getAuthUserId(ctx: { auth: Auth }) {
-//     return (await ctx.auth.getUserIdentity())?.subject ?? "anonymous";
-//   }
-
-// === MULTI-TENANT SETUP ===
-// For a multi-tenant app (e.g., a platform with businesses sending to their
-// clients), auth returns { userId, tenantId }:
-//
-//   async function getAuth(ctx: { auth: Auth }) {
-//     const identity = await ctx.auth.getUserIdentity();
-//     return {
-//       userId: identity?.subject ?? "anonymous",
-//       tenantId: identity?.orgId ?? "default",
-//     };
-//   }
-
-async function getAuthUserId(ctx: { auth: Auth }) {
-  return (await ctx.auth.getUserIdentity())?.subject ?? "anonymous";
-}
-
-// Example resolver functions
-// In a real app, these would query your users table
-
-async function getEmailForUser(
-  _ctx: RunMutationCtx,
-  userId: string,
-  _tenantId?: string,
-): Promise<string | null> {
-  // In production, query your users table:
-  // const user = await ctx.db.get(userId as Id<"users">);
-  // return user?.email ?? null;
-
-  // Multi-tenant example: look up email in tenant's contacts table
-  // if (tenantId) {
-  //   const contact = await ctx.db.query("contacts")
-  //     .withIndex("by_tenantId_userId", q => q.eq("tenantId", tenantId).eq("userId", userId))
-  //     .first();
-  //   return contact?.email ?? null;
-  // }
-
-  // For demo purposes, return a test email
-  return `${userId}@example.com`;
-}
-
-async function getPhoneForUser(
-  _ctx: RunMutationCtx,
-  _userId: string,
-  _tenantId?: string,
-): Promise<string | null> {
-  // In production, query your users table:
-  // const user = await ctx.db.get(userId as Id<"users">);
-  // return user?.phone ?? null;
-
-  // For demo purposes, return null (SMS disabled)
-  return null;
-}
-
-// Create the Notifications client
 const notifications = new Notifications(components.notifications, {
-  auth: getAuthUserId,
-
-  // Channel configuration (static — same for all senders)
+  // Channel configuration
   channels: {
     email: {
       defaultFrom: "notifications@example.com",
@@ -128,46 +19,46 @@ const notifications = new Notifications(components.notifications, {
       allowUnregisteredTokens: true,
     },
     sms: {
-      defaultFrom: "+10000000000", // Replace with your Twilio phone number
+      defaultFrom: "+10000000000",
     },
   },
 
   // Resolvers for user contact information
   resolvers: {
-    email: getEmailForUser,
-    phone: getPhoneForUser,
+    email: async (ctx, userId) => {
+      // In production: const user = await ctx.db.get(userId); return user?.email;
+      return `${userId}@example.com`;
+    },
+    phone: async (_ctx, _userId) => null, // SMS disabled in example
   },
 
-  // === DYNAMIC SENDER IDENTITY (multi-tenant) ===
-  // Uncomment to resolve "from" addresses dynamically per tenant.
-  // These take priority over static channel config defaults.
-  //
-  // senderResolvers: {
-  //   email: async (ctx, tenantId) => {
-  //     const tenant = await ctx.runQuery(api.tenants.get, { id: tenantId });
-  //     return `notifications@${tenant.domain}`;
-  //   },
-  //   sms: async (ctx, tenantId) => {
-  //     const tenant = await ctx.runQuery(api.tenants.get, { id: tenantId });
-  //     return tenant.twilioPhoneNumber; // e.g., "+15551234567"
-  //   },
-  // },
-
-  // Child component clients for actual delivery
-  // Uncomment after running codegen with child components:
-  // clients: {
-  //   email: resendClient,
-  //   push: pushClient,
-  //   sms: twilioClient,
-  // },
+  // Default: channels are enabled unless user opts out
+  defaultPreferenceMode: "opt-out",
 });
 
-// --- Notification Definitions (using createNotification helper) ---
+// =============================================================================
+// 2. Define notification events — one per file in a real app.
+// =============================================================================
 
-/**
- * Comment reply notification - sent when someone replies to a user's comment.
- */
-const commentReplyNotification = createNotification({
+const welcomeNotification = defineEvent({
+  event: "user.welcome",
+  dataValidator: v.object({ userName: v.string() }),
+  category: "onboarding",
+  channels: {
+    inbox: {
+      title: (data) => `Welcome, ${data.userName}!`,
+      body: () => "Thanks for joining. Here's how to get started.",
+    },
+    email: {
+      subject: (data) => `Welcome to the app, ${data.userName}`,
+      body: (data) => `Hi ${data.userName}, welcome aboard!`,
+      html: (data) =>
+        `<h1>Welcome, ${data.userName}!</h1><p>Thanks for joining.</p>`,
+    },
+  },
+});
+
+const commentReplyNotification = defineEvent({
   event: "comment.reply",
   dataValidator: v.object({
     commenterName: v.string(),
@@ -183,48 +74,56 @@ const commentReplyNotification = createNotification({
       subject: (data) => `${data.commenterName} replied to your comment`,
       body: (data) =>
         `${data.commenterName} replied on "${data.postTitle}".`,
-      html: (data) =>
-        `<p><strong>${data.commenterName}</strong> replied on "${data.postTitle}".</p>`,
     },
     push: {
       title: () => "New reply",
       body: (data) =>
         `${data.commenterName} replied on "${data.postTitle}"`,
-      data: (data) => ({ event: "comment.reply", postTitle: data.postTitle }),
     },
   },
 });
 
-/**
- * Welcome notification - sent when a new user signs up.
- */
-const welcomeNotification = createNotification({
-  event: "user.welcome",
-  dataValidator: v.object({ userName: v.string() }),
-  category: "onboarding",
+/** OTP — marked as `required` so it always sends, even if user disabled SMS. */
+const otpNotification = defineEvent({
+  event: "auth.otp",
+  dataValidator: v.object({ code: v.string(), phoneNumber: v.string() }),
+  category: "auth",
+  required: true,
   channels: {
     inbox: {
-      title: (data) => `Welcome, ${data.userName}!`,
-      body: () => "Thanks for joining. Here's how to get started.",
+      title: () => "Verification Code",
+      body: (data) => `Your code is ${data.code}`,
     },
-    email: {
-      subject: (data) => `Welcome to the app, ${data.userName}`,
-      body: (data) => `Hi ${data.userName}, welcome aboard!`,
-      html: (data) =>
-        `<h1>Welcome, ${data.userName}!</h1><p>Thanks for joining. Here's how to get started.</p>`,
+    sms: {
+      body: (data) => `Your verification code is ${data.code}. Do not share.`,
     },
   },
 });
 
-/**
- * Reminder notification - example of a scheduled notification.
- */
-const reminderNotification = createNotification({
-  event: "reminder",
+/** Security alert — `required` bypasses all preferences. */
+const securityAlertNotification = defineEvent({
+  event: "security.alert",
   dataValidator: v.object({
-    title: v.string(),
-    message: v.string(),
+    alertType: v.string(),
+    details: v.string(),
   }),
+  category: "security",
+  required: true,
+  channels: {
+    inbox: {
+      title: (data) => `Security Alert: ${data.alertType}`,
+      body: (data) => data.details,
+    },
+    email: {
+      subject: (data) => `[Security Alert] ${data.alertType}`,
+      body: (data) => `A security event has occurred: ${data.details}`,
+    },
+  },
+});
+
+const reminderNotification = defineEvent({
+  event: "reminder",
+  dataValidator: v.object({ title: v.string(), message: v.string() }),
   category: "reminders",
   channels: {
     inbox: {
@@ -238,7 +137,13 @@ const reminderNotification = createNotification({
   },
 });
 
-// --- Exported API (using the new api() method for plug-and-play exports) ---
+// =============================================================================
+// 3. Export the pre-built API — auth injected here.
+// =============================================================================
+
+async function getAuthUserId(ctx: { auth: Auth }) {
+  return (await ctx.auth.getUserIdentity())?.subject ?? "anonymous";
+}
 
 export const {
   list,
@@ -252,21 +157,24 @@ export const {
   getPushTokens,
   deletePushToken,
   getDeliveryLogs,
-} = notifications.api();
+} = notifications.api({
+  auth: getAuthUserId,
+});
 
-// --- Send mutations ---
+// =============================================================================
+// 4. Send mutations — just call notifications.send() directly.
+//    No wrapper internalMutation needed for simple cases.
+// =============================================================================
 
 export const sendTestNotification = mutation({
   args: {
     userId: v.optional(v.string()),
-    tenantId: v.optional(v.string()),
     data: v.object({ userName: v.string() }),
   },
   handler: async (ctx, args) => {
     const userId = args.userId ?? (await getAuthUserId(ctx));
     return notifications.send(ctx, welcomeNotification, {
       userId,
-      tenantId: args.tenantId,
       data: args.data,
     });
   },
@@ -275,7 +183,6 @@ export const sendTestNotification = mutation({
 export const sendCommentReply = mutation({
   args: {
     userId: v.optional(v.string()),
-    tenantId: v.optional(v.string()),
     data: v.object({
       commenterName: v.string(),
       postTitle: v.string(),
@@ -285,25 +192,78 @@ export const sendCommentReply = mutation({
     const userId = args.userId ?? (await getAuthUserId(ctx));
     return notifications.send(ctx, commentReplyNotification, {
       userId,
-      tenantId: args.tenantId,
       data: args.data,
     });
   },
 });
 
-// --- Scheduled Notifications ---
-
 /**
- * Schedule a reminder notification for the future.
+ * Send an OTP — this is the improved DX.
+ *
+ * Before: Required casting to `any`, running raw queries to find the user,
+ *         and dispatching through a separate internalMutation.
+ *
+ * Now: Just call send() with the userId and data. Done.
  */
+export const sendOtp = internalMutation({
+  args: {
+    userId: v.string(),
+    code: v.string(),
+    phoneNumber: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return notifications.send(ctx, otpNotification, {
+      userId: args.userId,
+      data: { code: args.code, phoneNumber: args.phoneNumber },
+    });
+  },
+});
+
+export const sendSecurityAlert = internalMutation({
+  args: {
+    userId: v.string(),
+    alertType: v.string(),
+    details: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return notifications.send(ctx, securityAlertNotification, {
+      userId: args.userId,
+      data: { alertType: args.alertType, details: args.details },
+    });
+  },
+});
+
+// =============================================================================
+// 5. sendMany() — notify multiple users at once, exclude the actor.
+// =============================================================================
+
+export const sendReplyToSubscribers = mutation({
+  args: {
+    subscriberIds: v.array(v.string()),
+    data: v.object({
+      commenterName: v.string(),
+      postTitle: v.string(),
+    }),
+  },
+  handler: async (ctx, args) => {
+    const actor = await getAuthUserId(ctx);
+    return notifications.sendMany(ctx, commentReplyNotification, {
+      userIds: args.subscriberIds,
+      actor, // Don't notify the person who wrote the reply
+      data: args.data,
+    });
+  },
+});
+
+// =============================================================================
+// 6. Schedule + cancel — accept Date objects, not just timestamps.
+// =============================================================================
+
 export const scheduleReminder = mutation({
   args: {
     userId: v.optional(v.string()),
-    data: v.object({
-      title: v.string(),
-      message: v.string(),
-    }),
-    scheduledFor: v.number(), // Unix timestamp in milliseconds
+    data: v.object({ title: v.string(), message: v.string() }),
+    scheduledFor: v.number(),
   },
   handler: async (ctx, args) => {
     const userId = args.userId ?? (await getAuthUserId(ctx));
@@ -315,90 +275,18 @@ export const scheduleReminder = mutation({
   },
 });
 
-/**
- * Cancel a scheduled notification.
- */
 export const cancelScheduledNotification = mutation({
-  args: {
-    scheduledNotificationId: v.string(),
-  },
+  args: { scheduledNotificationId: v.string() },
   handler: async (ctx, args) => {
-    return notifications.cancelScheduled(ctx, args.scheduledNotificationId);
+    const userId = await getAuthUserId(ctx);
+    return notifications.cancel(ctx, args.scheduledNotificationId, userId);
   },
 });
 
-/**
- * Get scheduled notifications for the current user.
- */
-export const getScheduledNotifications = query({
-  args: {
-    status: v.optional(
-      v.union(
-        v.literal("pending"),
-        v.literal("processing"),
-        v.literal("sent"),
-        v.literal("failed"),
-        v.literal("cancelled"),
-      ),
-    ),
-  },
-  handler: async (ctx, args) => {
-    return notifications.getScheduledNotifications(ctx, {
-      status: args.status,
-    });
-  },
-});
+// =============================================================================
+// 7. Deduplication — returns a discriminated union, not an exception.
+// =============================================================================
 
-// --- Transactional Notifications ---
-
-/**
- * Send a transactional notification (bypasses user preferences).
- * Use for security alerts, password resets, etc.
- */
-export const sendSecurityAlert = mutation({
-  args: {
-    userId: v.optional(v.string()),
-    data: v.object({
-      alertType: v.string(),
-      details: v.string(),
-    }),
-  },
-  handler: async (ctx, args) => {
-    const userId = args.userId ?? (await getAuthUserId(ctx));
-
-    // Create a transactional security alert
-    const securityAlert = createNotification({
-      event: "security.alert",
-      dataValidator: v.object({
-        alertType: v.string(),
-        details: v.string(),
-      }),
-      category: "security",
-      channels: {
-        inbox: {
-          title: (data) => `Security Alert: ${data.alertType}`,
-          body: (data) => data.details,
-        },
-        email: {
-          subject: (data) => `[Security Alert] ${data.alertType}`,
-          body: (data) => `A security event has occurred: ${data.details}`,
-        },
-      },
-    });
-
-    return notifications.send(ctx, securityAlert, {
-      userId,
-      data: args.data,
-      transactional: true, // Bypasses user preferences
-    });
-  },
-});
-
-// --- Deduplication Example ---
-
-/**
- * Send a notification with deduplication to prevent spam.
- */
 export const sendWithDeduplication = mutation({
   args: {
     userId: v.optional(v.string()),
@@ -406,15 +294,23 @@ export const sendWithDeduplication = mutation({
       commenterName: v.string(),
       postTitle: v.string(),
     }),
-    deduplicationKey: v.string(),
+    dedupe: v.string(),
   },
   handler: async (ctx, args) => {
     const userId = args.userId ?? (await getAuthUserId(ctx));
-    return notifications.send(ctx, commentReplyNotification, {
+    const result = await notifications.send(ctx, commentReplyNotification, {
       userId,
       data: args.data,
-      deduplicationKey: args.deduplicationKey,
-      deduplicationTtlSeconds: 3600, // 1 hour
+      dedupe: args.dedupe,
     });
+
+    // Result is a discriminated union — no try/catch needed
+    if (result.status === "deduplicated") {
+      console.log("Duplicate suppressed:", result.dedupe);
+      return result;
+    }
+
+    console.log("Sent:", result.notificationId, result.deliveries);
+    return result;
   },
 });

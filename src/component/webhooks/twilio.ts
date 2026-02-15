@@ -9,8 +9,7 @@
  * - failed: Message failed to send
  *
  * Security: This webhook verifies signatures using the TWILIO_AUTH_TOKEN
- * environment variable. If not set, signature verification is skipped (not
- * recommended for production).
+ * environment variable. Returns 500 if the token is not configured.
  *
  * @see https://www.twilio.com/docs/sms/api/message-resource#message-status-values
  * @see https://www.twilio.com/docs/usage/security#validating-requests
@@ -114,8 +113,7 @@ function mapTwilioStatusToDeliveryStatus(
  * 4. Set the TWILIO_AUTH_TOKEN environment variable for signature verification
  *
  * Security: This webhook verifies signatures using the TWILIO_AUTH_TOKEN
- * environment variable. If not set, signature verification is skipped (not
- * recommended for production).
+ * environment variable. Returns 500 if the token is not configured.
  *
  * @example
  * ```ts
@@ -142,16 +140,19 @@ export const twilioWebhook = httpAction(async (ctx, request) => {
     params[key] = value.toString();
   });
 
-  // Verify signature if auth token is configured
+  // Verify signature — REQUIRED
   const authToken = process.env.TWILIO_AUTH_TOKEN;
-  if (authToken) {
-    const signature = request.headers.get("X-Twilio-Signature");
-    const url = request.url;
+  if (!authToken) {
+    console.error("[notifications] TWILIO_AUTH_TOKEN not configured. Set this environment variable to verify webhook signatures.");
+    return new Response("TWILIO_AUTH_TOKEN not configured", { status: 500 });
+  }
 
-    const isValid = await verifyTwilioSignature(url, params, signature, authToken);
-    if (!isValid) {
-      return new Response("Invalid signature", { status: 401 });
-    }
+  const signature = request.headers.get("X-Twilio-Signature");
+  const url = request.url;
+
+  const isValid = await verifyTwilioSignature(url, params, signature, authToken);
+  if (!isValid) {
+    return new Response("Invalid signature", { status: 401 });
   }
 
   const messageSid = params["MessageSid"] ?? null;
@@ -185,7 +186,7 @@ export const twilioWebhook = httpAction(async (ctx, request) => {
     externalId: messageSid,
     channel: "sms",
     status,
-    error,
+    reason: error,
     webhookData: {
       messageSid,
       messageStatus,

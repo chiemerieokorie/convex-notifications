@@ -1,62 +1,65 @@
 "use client";
-
+import React, { createContext, useContext, type ReactNode } from "react";
 import {
-  createElement,
-  createContext,
-  useContext,
-  useMemo,
-  type ReactNode,
-} from "react";
-import { useQuery, usePaginatedQuery } from "convex/react";
+  useQuery,
+  usePaginatedQuery,
+  useMutation,
+  type PaginatedQueryReference,
+} from "convex/react";
 import type { FunctionReference } from "convex/server";
 
-// Type for any query function reference
-type AnyQueryRef = FunctionReference<"query", "public">;
-type AnyMutationRef = FunctionReference<"mutation", "public">;
+// ---------------------------------------------------------------------------
+// Types for the API shape returned by notifications.api()
+// ---------------------------------------------------------------------------
 
-/**
- * API shape expected by the NotificationsProvider
- */
+type AnyQuery = FunctionReference<"query", any, any, any>;
+type AnyMutation = FunctionReference<"mutation", any, any, any>;
+
 export type NotificationsApi = {
-  list: AnyQueryRef;
-  unreadCount: AnyQueryRef;
-  markRead: AnyMutationRef;
-  markAllRead: AnyMutationRef;
-  archive: AnyMutationRef;
-  getPreferences: AnyQueryRef;
-  updatePreference: AnyMutationRef;
-  registerPushToken?: AnyMutationRef;
-  getPushTokens?: AnyQueryRef;
-  deletePushToken?: AnyMutationRef;
-  getDeliveryLogs?: AnyQueryRef;
+  list: AnyQuery;
+  unreadCount: AnyQuery;
+  markRead: AnyMutation;
+  markAllRead: AnyMutation;
+  archive: AnyMutation;
+  getPreferences: AnyQuery;
+  updatePreference: AnyMutation;
+  registerPushToken: AnyMutation;
+  getPushTokens: AnyQuery;
+  deletePushToken: AnyMutation;
+  getDeliveryLogs: AnyQuery;
 };
 
-/**
- * Context value for notifications
- */
-type NotificationsContextValue = {
-  api: NotificationsApi;
-};
+// ---------------------------------------------------------------------------
+// Context
+// ---------------------------------------------------------------------------
 
-const NotificationsContext = createContext<NotificationsContextValue | null>(null);
+const NotificationsContext = createContext<NotificationsApi | null>(null);
+
+function useApi(): NotificationsApi {
+  const api = useContext(NotificationsContext);
+  if (!api) {
+    throw new Error(
+      "useNotifications/useUnreadCount/etc. must be used within a <NotificationsProvider>. " +
+      "Wrap your app with <NotificationsProvider api={notifications.api({ auth })} />",
+    );
+  }
+  return api;
+}
+
+// ---------------------------------------------------------------------------
+// Provider
+// ---------------------------------------------------------------------------
 
 /**
- * Provider component for notifications context.
- *
- * Wrap your app with this provider to enable the notification hooks.
+ * Provides the notifications API to all child components via React context.
  *
  * @example
  * ```tsx
- * import { NotificationsProvider } from "convex-notifications/react";
  * import { api } from "../convex/_generated/api";
  *
- * function App() {
- *   return (
- *     <NotificationsProvider api={api.notifications}>
- *       <InboxComponent />
- *     </NotificationsProvider>
- *   );
- * }
+ * <NotificationsProvider api={api.notifications}>
+ *   <App />
+ * </NotificationsProvider>
  * ```
  */
 export function NotificationsProvider({
@@ -66,175 +69,170 @@ export function NotificationsProvider({
   api: NotificationsApi;
   children: ReactNode;
 }) {
-  const value = useMemo(() => ({ api }), [api]);
-  return createElement(NotificationsContext.Provider, { value }, children);
+  return React.createElement(
+    NotificationsContext.Provider,
+    { value: api },
+    children,
+  );
 }
 
+// ---------------------------------------------------------------------------
+// Query hooks
+// ---------------------------------------------------------------------------
+
 /**
- * Hook to access paginated notifications list.
- *
- * Uses Convex's built-in `usePaginatedQuery` for reactive pagination,
- * backed by `convex-helpers/server/pagination` paginator on the server.
- *
- * Can be used with or without the provider:
- * - With provider: `useNotifications()` (no args needed)
- * - Without provider: `useNotifications(api.notifications.list)`
+ * Paginated list of notifications.
  *
  * @example
  * ```tsx
- * // With provider
- * function InboxWithProvider() {
- *   const { notifications, loadMore, status } = useNotifications();
- *   return (
- *     <div>
- *       {notifications.map(n => <NotificationItem key={n._id} notification={n} />)}
- *       {status === "CanLoadMore" && <button onClick={() => loadMore(10)}>Load more</button>}
- *     </div>
- *   );
- * }
- *
- * // Without provider
- * function InboxStandalone() {
- *   const { notifications, loadMore, status } = useNotifications(api.notifications.list);
- *   // ...
- * }
+ * const { results, loadMore, status } = useNotifications();
  * ```
  */
-export function useNotifications(
-  listFn?: AnyQueryRef,
-  opts?: { initialNumItems?: number },
-) {
-  const context = useContext(NotificationsContext);
-  const fn = listFn ?? context?.api.list;
-  if (!fn) {
-    throw new Error(
-      "useNotifications requires either a list function argument or NotificationsProvider context"
-    );
-  }
-
-  const result = usePaginatedQuery(fn, {}, {
-    initialNumItems: opts?.initialNumItems ?? 20,
-  });
-
-  return {
-    notifications: result.results,
-    loadMore: result.loadMore,
-    status: result.status,
-    isLoading: result.isLoading,
-  };
+export function useNotifications(opts?: { numItems?: number }) {
+  const api = useApi();
+  return usePaginatedQuery(
+    api.list as PaginatedQueryReference,
+    {},
+    { initialNumItems: opts?.numItems ?? 20 },
+  );
 }
 
 /**
- * Hook to get the unread notification count.
- *
- * Can be used with or without the provider.
+ * Subscribe to unread notification count.
  *
  * @example
  * ```tsx
- * function NotificationBadge() {
- *   const count = useUnreadCount();
- *   return count > 0 ? <Badge>{count}</Badge> : null;
- * }
+ * const count = useUnreadCount();
  * ```
  */
-export function useUnreadCount(countFn?: AnyQueryRef): number {
-  const context = useContext(NotificationsContext);
-  const fn = countFn ?? context?.api.unreadCount;
-  if (!fn) {
-    throw new Error(
-      "useUnreadCount requires either a count function argument or NotificationsProvider context"
-    );
-  }
-
-  return useQuery(fn, {}) ?? 0;
+export function useUnreadCount(): number | undefined {
+  const api = useApi();
+  return useQuery(api.unreadCount, {});
 }
 
 /**
- * Hook to get user notification preferences.
- *
- * Can be used with or without the provider.
+ * Subscribe to user preferences.
  *
  * @example
  * ```tsx
- * function PreferencesPanel() {
- *   const preferences = usePreferences();
- *   return (
- *     <div>
- *       {preferences.map(pref => (
- *         <PreferenceToggle key={pref._id} preference={pref} />
- *       ))}
- *     </div>
- *   );
- * }
+ * const preferences = usePreferences();
  * ```
  */
-export function usePreferences(prefsFn?: AnyQueryRef) {
-  const context = useContext(NotificationsContext);
-  const fn = prefsFn ?? context?.api.getPreferences;
-  if (!fn) {
-    throw new Error(
-      "usePreferences requires either a preferences function argument or NotificationsProvider context"
-    );
-  }
-
-  return useQuery(fn, {}) ?? [];
+export function usePreferences(): any[] | undefined {
+  const api = useApi();
+  return useQuery(api.getPreferences, {});
 }
 
 /**
- * Hook to get push tokens for the current user.
+ * Subscribe to push tokens.
  *
  * @example
  * ```tsx
- * function DevicesList() {
- *   const tokens = usePushTokens();
- *   return (
- *     <ul>
- *       {tokens.map(t => <li key={t._id}>{t.platform}: {t.token}</li>)}
- *     </ul>
- *   );
- * }
+ * const tokens = usePushTokens();
  * ```
  */
-export function usePushTokens(tokensFn?: AnyQueryRef) {
-  const context = useContext(NotificationsContext);
-  const fn = tokensFn ?? context?.api.getPushTokens;
-  if (!fn) {
-    throw new Error(
-      "usePushTokens requires either a getPushTokens function argument or NotificationsProvider context with getPushTokens"
-    );
-  }
-
-  return useQuery(fn, {}) ?? [];
+export function usePushTokens(): any[] | undefined {
+  const api = useApi();
+  return useQuery(api.getPushTokens, {});
 }
 
 /**
- * Hook to get delivery logs for a notification.
+ * Subscribe to delivery logs for a specific notification.
  *
  * @example
  * ```tsx
- * function DeliveryStatus({ notificationId }: { notificationId: string }) {
- *   const logs = useDeliveryLogs(notificationId);
- *   return (
- *     <ul>
- *       {logs.map(log => (
- *         <li key={log._id}>{log.channel}: {log.status}</li>
- *       ))}
- *     </ul>
- *   );
- * }
+ * const logs = useDeliveryLogs(notificationId);
  * ```
  */
-export function useDeliveryLogs(
-  notificationId: string,
-  logsFn?: AnyQueryRef,
-) {
-  const context = useContext(NotificationsContext);
-  const fn = logsFn ?? context?.api.getDeliveryLogs;
-  if (!fn) {
-    throw new Error(
-      "useDeliveryLogs requires either a getDeliveryLogs function argument or NotificationsProvider context with getDeliveryLogs"
-    );
-  }
+export function useDeliveryLogs(notificationId: string): any[] | undefined {
+  const api = useApi();
+  return useQuery(api.getDeliveryLogs, { notificationId });
+}
 
-  return useQuery(fn, { notificationId }) ?? [];
+// ---------------------------------------------------------------------------
+// Mutation hooks
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns a mutation function to mark a notification as read.
+ *
+ * @example
+ * ```tsx
+ * const markRead = useMarkRead();
+ * await markRead({ notificationId: n._id });
+ * ```
+ */
+export function useMarkRead() {
+  const api = useApi();
+  return useMutation(api.markRead);
+}
+
+/**
+ * Returns a mutation function to mark all notifications as read.
+ *
+ * @example
+ * ```tsx
+ * const markAllRead = useMarkAllRead();
+ * await markAllRead({});
+ * ```
+ */
+export function useMarkAllRead() {
+  const api = useApi();
+  return useMutation(api.markAllRead);
+}
+
+/**
+ * Returns a mutation function to archive a notification.
+ *
+ * @example
+ * ```tsx
+ * const archive = useArchive();
+ * await archive({ notificationId: n._id });
+ * ```
+ */
+export function useArchive() {
+  const api = useApi();
+  return useMutation(api.archive);
+}
+
+/**
+ * Returns a mutation function to update a preference.
+ *
+ * @example
+ * ```tsx
+ * const updatePref = useUpdatePreference();
+ * await updatePref({ level: "global", channel: "email", enabled: false });
+ * ```
+ */
+export function useUpdatePreference() {
+  const api = useApi();
+  return useMutation(api.updatePreference);
+}
+
+/**
+ * Returns a mutation function to register a push token.
+ *
+ * @example
+ * ```tsx
+ * const register = useRegisterPushToken();
+ * await register({ token: expoPushToken, platform: "ios" });
+ * ```
+ */
+export function useRegisterPushToken() {
+  const api = useApi();
+  return useMutation(api.registerPushToken);
+}
+
+/**
+ * Returns a mutation function to delete a push token.
+ *
+ * @example
+ * ```tsx
+ * const deleteToken = useDeletePushToken();
+ * await deleteToken({ token: "ExponentPushToken[...]" });
+ * ```
+ */
+export function useDeletePushToken() {
+  const api = useApi();
+  return useMutation(api.deletePushToken);
 }

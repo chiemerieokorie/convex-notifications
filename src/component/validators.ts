@@ -18,6 +18,7 @@ const levelValidator = v.union(
 
 const deliveryStatusValidator = v.union(
   v.literal("pending"),
+  v.literal("queued"),
   v.literal("sent"),
   v.literal("delivered"),
   v.literal("failed"),
@@ -57,7 +58,7 @@ export const notificationValidator = v.object({
   data: v.optional(v.any()),
   readAt: v.optional(v.number()),
   archivedAt: v.optional(v.number()),
-  transactional: v.optional(v.boolean()),
+  required: v.optional(v.boolean()),
 });
 
 export const preferenceValidator = v.object({
@@ -78,7 +79,7 @@ export const deliveryLogValidator = v.object({
   notificationId: v.id("notifications"),
   channel: v.string(),
   status: deliveryStatusValidator,
-  error: v.optional(v.string()),
+  reason: v.optional(v.string()),
   sentAt: v.optional(v.number()),
   metadata: v.optional(v.any()),
   externalId: v.optional(v.string()),
@@ -91,15 +92,12 @@ export const scheduledNotificationValidator = v.object({
   userId: v.string(),
   event: v.string(),
   category: v.optional(v.string()),
-  title: v.string(),
-  body: v.string(),
   data: v.optional(v.any()),
-  channels: v.any(),
   scheduledFor: v.number(),
-  transactional: v.optional(v.boolean()),
+  required: v.optional(v.boolean()),
   deduplicationKey: v.optional(v.string()),
   status: scheduledStatusValidator,
-  error: v.optional(v.string()),
+  reason: v.optional(v.string()),
   processedAt: v.optional(v.number()),
 });
 

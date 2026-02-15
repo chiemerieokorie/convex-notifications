@@ -162,8 +162,7 @@ function mapResendEventToStatus(
  * 4. Set the RESEND_WEBHOOK_SECRET environment variable with the signing secret
  *
  * Security: This webhook verifies signatures using the RESEND_WEBHOOK_SECRET
- * environment variable. If not set, signature verification is skipped (not
- * recommended for production).
+ * environment variable. Returns 500 if the secret is not configured.
  *
  * @example
  * ```ts
@@ -184,22 +183,25 @@ export const resendWebhook = httpAction(async (ctx, request) => {
   // Get the raw body for signature verification
   const rawBody = await request.text();
 
-  // Verify webhook signature if secret is configured
+  // Verify webhook signature — REQUIRED
   const webhookSecret = process.env.RESEND_WEBHOOK_SECRET;
-  if (webhookSecret) {
-    const isValid = await verifySvixSignature(
-      rawBody,
-      {
-        svixId: request.headers.get("svix-id"),
-        svixTimestamp: request.headers.get("svix-timestamp"),
-        svixSignature: request.headers.get("svix-signature"),
-      },
-      webhookSecret,
-    );
+  if (!webhookSecret) {
+    console.error("[notifications] RESEND_WEBHOOK_SECRET not configured. Set this environment variable to verify webhook signatures.");
+    return new Response("RESEND_WEBHOOK_SECRET not configured", { status: 500 });
+  }
 
-    if (!isValid) {
-      return new Response("Invalid signature", { status: 401 });
-    }
+  const isValid = await verifySvixSignature(
+    rawBody,
+    {
+      svixId: request.headers.get("svix-id"),
+      svixTimestamp: request.headers.get("svix-timestamp"),
+      svixSignature: request.headers.get("svix-signature"),
+    },
+    webhookSecret,
+  );
+
+  if (!isValid) {
+    return new Response("Invalid signature", { status: 401 });
   }
 
   // Parse the webhook payload

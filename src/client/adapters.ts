@@ -8,7 +8,7 @@
 import type { PushNotifications } from "@convex-dev/expo-push-notifications";
 import type { Resend } from "@convex-dev/resend";
 import type { Twilio } from "@convex-dev/twilio";
-import type { RunMutationCtx, RunActionCtx, DeliveryResult } from "./types.js";
+import type { MutationCtx, ActionCtx, DeliveryResult } from "./types.js";
 
 // Re-export types for consumers
 export type { PushNotifications } from "@convex-dev/expo-push-notifications";
@@ -43,7 +43,7 @@ export type RenderedSms = {
  * Email adapter using the Resend component
  */
 export async function dispatchEmail(
-  ctx: RunMutationCtx,
+  ctx: MutationCtx,
   resend: Resend,
   rendered: RenderedEmail,
 ): Promise<DeliveryResult> {
@@ -66,7 +66,7 @@ export async function dispatchEmail(
     return {
       channel: "email",
       status: "failed",
-      error: errorMessage,
+      reason: errorMessage,
     };
   }
 }
@@ -75,7 +75,7 @@ export async function dispatchEmail(
  * Push notification adapter using the Expo Push Notifications component
  */
 export async function dispatchPush(
-  ctx: RunMutationCtx,
+  ctx: MutationCtx,
   pushNotifications: PushNotifications<string>,
   rendered: RenderedPush,
   allowUnregisteredTokens: boolean = true,
@@ -95,7 +95,7 @@ export async function dispatchPush(
       return {
         channel: "push",
         status: "skipped",
-        error: "User has paused notifications or no token registered",
+        reason: "User has paused notifications or no token registered",
       };
     }
 
@@ -109,7 +109,7 @@ export async function dispatchPush(
     return {
       channel: "push",
       status: "failed",
-      error: errorMessage,
+      reason: errorMessage,
     };
   }
 }
@@ -119,7 +119,7 @@ export async function dispatchPush(
  * Note: Twilio requires action context, so this must be called from an action.
  */
 export async function dispatchSms(
-  ctx: RunActionCtx,
+  ctx: ActionCtx,
   twilio: Twilio<{ defaultFrom: string }>,
   rendered: RenderedSms,
 ): Promise<DeliveryResult> {
@@ -140,7 +140,7 @@ export async function dispatchSms(
     return {
       channel: "sms",
       status: "failed",
-      error: errorMessage,
+      reason: errorMessage,
     };
   }
 }
@@ -149,7 +149,7 @@ export async function dispatchSms(
  * Check if the context has action capabilities (runAction)
  */
 export function isActionContext(
-  ctx: RunMutationCtx | RunActionCtx,
-): ctx is RunActionCtx {
+  ctx: MutationCtx | ActionCtx,
+): ctx is ActionCtx {
   return "runAction" in ctx;
 }
