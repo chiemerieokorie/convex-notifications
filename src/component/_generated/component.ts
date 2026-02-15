@@ -58,8 +58,8 @@ export type ComponentApi<
     list: FunctionReference<
       "query",
       "internal",
-      { tenantId?: string; cursor?: number; limit?: number; userId: string },
-      { cursor: number | null; notifications: any[] },
+      { tenantId?: string; userId: string; paginationOpts: { numItems: number; cursor: string | null } },
+      { page: any[]; isDone: boolean; continueCursor: string },
       Name
     >;
     markAllRead: FunctionReference<

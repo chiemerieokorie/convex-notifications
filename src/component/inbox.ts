@@ -1,42 +1,39 @@
 import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
+import { paginator } from "convex-helpers/server/pagination";
 import { internalMutation, internalQuery } from "./_generated/server.js";
+import { notificationValidator } from "./validators.js";
+import schema from "./schema.js";
 
 export const list = internalQuery({
   args: {
     tenantId: v.optional(v.string()),
     userId: v.string(),
-    limit: v.optional(v.number()),
-    cursor: v.optional(v.number()),
+    paginationOpts: paginationOptsValidator,
   },
   returns: v.object({
-    notifications: v.array(v.any()),
-    cursor: v.union(v.number(), v.null()),
+    page: v.array(notificationValidator),
+    isDone: v.boolean(),
+    continueCursor: v.string(),
   }),
   handler: async (ctx, args) => {
-    const limit = args.limit ?? 20;
+    const p = paginator(ctx.db, schema);
     const q = args.tenantId !== undefined
-      ? ctx.db
+      ? p
           .query("notifications")
           .withIndex("by_tenantId_userId", (q) =>
             q.eq("tenantId", args.tenantId).eq("userId", args.userId),
           )
-      : ctx.db
+      : p
           .query("notifications")
           .withIndex("by_userId", (q) => q.eq("userId", args.userId));
 
-    // Stream through results, filtering as we go instead of collecting all
-    const page = [];
-    for await (const n of q.order("desc")) {
-      if (n.archivedAt !== undefined) continue;
-      if (args.cursor !== undefined && n._creationTime >= args.cursor) continue;
-      page.push(n);
-      if (page.length === limit) break;
-    }
+    const result = await q
+      .order("desc")
+      .filterWith(async (n) => n.archivedAt === undefined)
+      .paginate(args.paginationOpts);
 
-    const nextCursor =
-      page.length === limit ? page[page.length - 1]._creationTime : null;
-
-    return { notifications: page, cursor: nextCursor };
+    return result;
   },
 });
 

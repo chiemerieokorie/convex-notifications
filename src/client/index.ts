@@ -1,4 +1,4 @@
-import { queryGeneric, mutationGeneric } from "convex/server";
+import { queryGeneric, mutationGeneric, paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 import type { ComponentApi } from "../component/_generated/component.js";
 import type {
@@ -157,13 +157,13 @@ export class Notifications {
 
   async list(
     ctx: RunQueryCtx,
-    opts?: { limit?: number; cursor?: number },
+    paginationOpts: { numItems: number; cursor: string | null },
   ) {
     const { userId, tenantId } = await this.resolveAuth(ctx);
     return await ctx.runQuery(this.component.inbox.list, {
       tenantId,
       userId,
-      ...opts,
+      paginationOpts,
     });
   }
 
@@ -762,17 +762,22 @@ export class Notifications {
       /**
        * List notifications for the current user (paginated)
        */
+      /**
+       * List notifications for the current user (paginated).
+       * Uses standard Convex pagination via convex-helpers paginator.
+       * Compatible with usePaginatedQuery on the client.
+       */
       list: queryGeneric({
         args: {
-          limit: v.optional(v.number()),
-          cursor: v.optional(v.number()),
+          paginationOpts: paginationOptsValidator,
         },
         returns: v.object({
-          notifications: v.array(v.any()),
-          cursor: v.union(v.number(), v.null()),
+          page: v.array(v.any()),
+          isDone: v.boolean(),
+          continueCursor: v.string(),
         }),
-        handler: (ctx: RunQueryCtx, args: { limit?: number; cursor?: number }) =>
-          self.list(ctx, args),
+        handler: (ctx: RunQueryCtx, args: { paginationOpts: { numItems: number; cursor: string | null } }) =>
+          self.list(ctx, args.paginationOpts),
       }),
 
       /**

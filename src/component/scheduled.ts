@@ -9,6 +9,7 @@
 
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server.js";
+import { scheduledNotificationValidator } from "./validators.js";
 
 /**
  * Schedule a notification for future delivery.
@@ -59,7 +60,7 @@ export const getPendingScheduledNotifications = internalQuery({
   args: {
     batchSize: v.optional(v.number()),
   },
-  returns: v.array(v.any()),
+  returns: v.array(scheduledNotificationValidator),
   handler: async (ctx, args) => {
     const batchSize = args.batchSize ?? 100;
     const now = Date.now();
@@ -183,7 +184,7 @@ export const getScheduledNotifications = internalQuery({
       ),
     ),
   },
-  returns: v.array(v.any()),
+  returns: v.array(scheduledNotificationValidator),
   handler: async (ctx, args) => {
     if (args.status) {
       return await ctx.db

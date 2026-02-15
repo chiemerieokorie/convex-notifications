@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server.js";
+import { deliveryLogValidator } from "./validators.js";
 
 const statusValidator = v.union(
   v.literal("pending"),
@@ -46,18 +47,6 @@ export const updateDeliveryStatus = internalMutation({
     });
     return null;
   },
-});
-
-const deliveryLogValidator = v.object({
-  _id: v.id("deliveryLog"),
-  _creationTime: v.number(),
-  notificationId: v.id("notifications"),
-  channel: v.string(),
-  status: statusValidator,
-  error: v.optional(v.string()),
-  sentAt: v.optional(v.number()),
-  metadata: v.optional(v.any()),
-  externalId: v.optional(v.string()),
 });
 
 export const getDeliveryLogs = internalQuery({

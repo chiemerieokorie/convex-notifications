@@ -19,9 +19,9 @@ describe("inbox", () => {
       body: "Test Body",
     });
 
-    const result = await t.query(internal.inbox.list, { userId: "user1" });
-    expect(result.notifications).toHaveLength(1);
-    expect(result.notifications[0].title).toBe("Test Title");
+    const result = await t.query(internal.inbox.list, { userId: "user1", paginationOpts: { numItems: 20, cursor: null } });
+    expect(result.page).toHaveLength(1);
+    expect(result.page[0].title).toBe("Test Title");
   });
 
   test("returns empty for different user", async () => {
@@ -33,8 +33,8 @@ describe("inbox", () => {
       body: "Test",
     });
 
-    const result = await t.query(internal.inbox.list, { userId: "user2" });
-    expect(result.notifications).toHaveLength(0);
+    const result = await t.query(internal.inbox.list, { userId: "user2", paginationOpts: { numItems: 20, cursor: null } });
+    expect(result.page).toHaveLength(0);
   });
 
   test("unread count", async () => {
@@ -102,8 +102,8 @@ describe("inbox", () => {
       notificationId: id,
     });
 
-    const result = await t.query(internal.inbox.list, { userId: "user1" });
-    expect(result.notifications).toHaveLength(0);
+    const result = await t.query(internal.inbox.list, { userId: "user1", paginationOpts: { numItems: 20, cursor: null } });
+    expect(result.page).toHaveLength(0);
   });
 
   test("archive excludes from unread count", async () => {
@@ -159,18 +159,17 @@ describe("inbox", () => {
     // First page
     const page1 = await t.query(internal.inbox.list, {
       userId: "user1",
-      limit: 3,
+      paginationOpts: { numItems: 3, cursor: null },
     });
-    expect(page1.notifications).toHaveLength(3);
-    expect(page1.cursor).not.toBeNull();
+    expect(page1.page).toHaveLength(3);
+    expect(page1.isDone).toBe(false);
 
     // Second page
     const page2 = await t.query(internal.inbox.list, {
       userId: "user1",
-      limit: 3,
-      cursor: page1.cursor!,
+      paginationOpts: { numItems: 3, cursor: page1.continueCursor },
     });
-    expect(page2.notifications).toHaveLength(2);
-    expect(page2.cursor).toBeNull();
+    expect(page2.page).toHaveLength(2);
+    expect(page2.isDone).toBe(true);
   });
 });

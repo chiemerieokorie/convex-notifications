@@ -9,6 +9,7 @@
 
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server.js";
+import { retryQueueValidator } from "./validators.js";
 
 /**
  * Default retry configuration
@@ -91,7 +92,7 @@ export const getPendingRetries = internalQuery({
   args: {
     batchSize: v.optional(v.number()),
   },
-  returns: v.array(v.any()),
+  returns: v.array(retryQueueValidator),
   handler: async (ctx, args) => {
     const batchSize = args.batchSize ?? 50;
     const now = Date.now();
@@ -197,7 +198,7 @@ export const getRetryStats = internalQuery({
   args: {
     notificationId: v.id("notifications"),
   },
-  returns: v.array(v.any()),
+  returns: v.array(retryQueueValidator),
   handler: async (ctx, args) => {
     return await ctx.db
       .query("retryQueue")
