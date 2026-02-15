@@ -1,3 +1,10 @@
+## [1.5.1](https://github.com/chiemerieokorie/convex-notifications/compare/v1.5.0...v1.5.1) (2026-02-15)
+
+### Bug Fixes
+
+* address multiple code review issues across the component ([888a759](https://github.com/chiemerieokorie/convex-notifications/commit/888a759cd1ea1bc8df1167d07844345709e063e8))
+* update example app to use usePaginatedQuery with new list format ([bd5e0ca](https://github.com/chiemerieokorie/convex-notifications/commit/bd5e0ca4f69d64e564d944780fa9e68998db245e))
+
 ## [1.5.0](https://github.com/chiemerieokorie/convex-notifications/compare/v1.4.0...v1.5.0) (2026-02-14)
 
 ### Features
