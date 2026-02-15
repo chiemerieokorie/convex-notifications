@@ -109,12 +109,16 @@ export const updateDeliveryFromWebhook = internalMutation({
       (args.status === "sent" || args.status === "delivered") && !log.sentAt;
 
     // Update the delivery log
+    const existingMetadata =
+      log.metadata != null && typeof log.metadata === "object" && !Array.isArray(log.metadata)
+        ? (log.metadata as Record<string, unknown>)
+        : {};
     await ctx.db.patch(log._id, {
       status: args.status,
       error: args.error,
       ...(shouldSetSentAt ? { sentAt: Date.now() } : {}),
       metadata: {
-        ...(log.metadata as object),
+        ...existingMetadata,
         webhookData: args.webhookData,
         webhookReceivedAt: Date.now(),
       },

@@ -342,7 +342,9 @@ export class Notifications {
       this.component.scheduled.cancelScheduledNotification,
       {
         tenantId,
-        id: scheduledNotificationId as any,
+        // scheduledNotificationId is a string returned by the component;
+        // Convex component IDs are serialized as strings across the boundary.
+        id: scheduledNotificationId as unknown as import("convex/values").GenericId<"scheduledNotifications">,
         userId,
       },
     );
@@ -387,14 +389,14 @@ export class Notifications {
     const tenantId = args.tenantId;
     const deliveries: DeliveryResult[] = [];
 
-    // 1. Check deduplication (scope key to tenant if provided)
+    // 1. Check deduplication atomically (scope key to tenant if provided)
     if (args.deduplicationKey) {
       const scopedKey = tenantId
         ? `${tenantId}:${args.deduplicationKey}`
         : args.deduplicationKey;
-      const isDuplicate = await ctx.runQuery(
-        this.component.notifications.checkDeduplication,
-        { key: scopedKey },
+      const isDuplicate = await ctx.runMutation(
+        this.component.notifications.checkAndRecordDeduplication,
+        { key: scopedKey, ttlSeconds: args.deduplicationTtlSeconds ?? 86400 },
       );
       if (isDuplicate) {
         throw new Error(
@@ -423,19 +425,7 @@ export class Notifications {
       },
     );
 
-    // 3. Record deduplication key
-    if (args.deduplicationKey) {
-      const scopedKey = tenantId
-        ? `${tenantId}:${args.deduplicationKey}`
-        : args.deduplicationKey;
-      await ctx.runMutation(
-        this.component.notifications.recordDeduplication,
-        {
-          key: scopedKey,
-          ttlSeconds: args.deduplicationTtlSeconds ?? 86400,
-        },
-      );
-    }
+    // 3. Deduplication key already recorded atomically in step 1
 
     // 4. Resolve enabled channels
     const definedChannels = Object.keys(definition.channels);

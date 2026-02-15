@@ -114,6 +114,13 @@ export type ComponentApi<
       string,
       Name
     >;
+    checkAndRecordDeduplication: FunctionReference<
+      "mutation",
+      "internal",
+      { key: string; ttlSeconds: number },
+      boolean,
+      Name
+    >;
   };
   preferences: {
     getPreferences: FunctionReference<

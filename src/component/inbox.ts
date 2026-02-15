@@ -24,17 +24,15 @@ export const list = internalQuery({
           .query("notifications")
           .withIndex("by_userId", (q) => q.eq("userId", args.userId));
 
-    const all = await q.order("desc").collect();
+    // Stream through results, filtering as we go instead of collecting all
+    const page = [];
+    for await (const n of q.order("desc")) {
+      if (n.archivedAt !== undefined) continue;
+      if (args.cursor !== undefined && n._creationTime >= args.cursor) continue;
+      page.push(n);
+      if (page.length === limit) break;
+    }
 
-    // Filter: exclude archived, apply cursor
-    const filtered = all.filter((n) => {
-      if (n.archivedAt !== undefined) return false;
-      if (args.cursor !== undefined && n._creationTime >= args.cursor)
-        return false;
-      return true;
-    });
-
-    const page = filtered.slice(0, limit);
     const nextCursor =
       page.length === limit ? page[page.length - 1]._creationTime : null;
 
@@ -60,8 +58,12 @@ export const unreadCount = internalQuery({
           .withIndex("by_userId_unread", (q) =>
             q.eq("userId", args.userId).eq("readAt", undefined),
           );
-    const results = await q.collect();
-    return results.filter((n) => n.archivedAt === undefined).length;
+    // Count in-place instead of collecting all documents into memory
+    let count = 0;
+    for await (const n of q) {
+      if (n.archivedAt === undefined) count++;
+    }
+    return count;
   },
 });
 

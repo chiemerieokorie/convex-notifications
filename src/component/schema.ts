@@ -109,6 +109,7 @@ export default defineSchema({
    * Used by the workflow component to retry failed channel dispatches.
    */
   retryQueue: defineTable({
+    tenantId: v.optional(v.string()),
     notificationId: v.id("notifications"),
     deliveryLogId: v.id("deliveryLog"),
     channel: v.string(),
@@ -134,6 +135,7 @@ export default defineSchema({
    * Tracks push notifications that should fall back to email if unread.
    */
   fallbackQueue: defineTable({
+    tenantId: v.optional(v.string()),
     notificationId: v.id("notifications"),
     userId: v.string(),
     fromChannel: v.string(), // e.g., "push"

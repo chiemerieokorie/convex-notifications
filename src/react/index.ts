@@ -5,9 +5,13 @@ import {
   createContext,
   useContext,
   useMemo,
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
   type ReactNode,
 } from "react";
-import { useQuery, usePaginatedQuery } from "convex/react";
+import { useQuery } from "convex/react";
 import type { FunctionReference } from "convex/server";
 
 // Type for any query function reference
@@ -109,15 +113,48 @@ export function useNotifications(
     );
   }
 
-  const result = usePaginatedQuery(fn, {}, {
-    initialNumItems: opts?.initialNumItems ?? 20,
-  });
+  const limit = opts?.initialNumItems ?? 20;
+  const [cursor, setCursor] = useState<number | undefined>(undefined);
+  const [allNotifications, setAllNotifications] = useState<unknown[]>([]);
+  const prevCursorRef = useRef<number | undefined>(undefined);
+
+  const result = useQuery(fn, { limit, cursor }) as
+    | { notifications: unknown[]; cursor: number | null }
+    | undefined;
+
+  // Accumulate pages as cursor changes
+  useEffect(() => {
+    if (!result) return;
+    if (cursor === undefined) {
+      // First page — replace all
+      setAllNotifications(result.notifications);
+    } else if (cursor !== prevCursorRef.current) {
+      // New page loaded — append
+      setAllNotifications((prev: unknown[]) => [...prev, ...result.notifications]);
+    }
+    prevCursorRef.current = cursor;
+  }, [result, cursor]);
+
+  const loadMore = useCallback(
+    (_numItems?: number) => {
+      if (result?.cursor != null) {
+        setCursor(result.cursor);
+      }
+    },
+    [result?.cursor],
+  );
+
+  const canLoadMore = result?.cursor != null;
 
   return {
-    notifications: result.results,
-    loadMore: result.loadMore,
-    status: result.status,
-    isLoading: result.isLoading,
+    notifications: allNotifications,
+    loadMore,
+    status: !result
+      ? ("LoadingFirstPage" as const)
+      : canLoadMore
+        ? ("CanLoadMore" as const)
+        : ("Exhausted" as const),
+    isLoading: result === undefined,
   };
 }
 

@@ -203,7 +203,7 @@ export const getTriggeredFallbacks = internalQuery({
 
     const triggered = await ctx.db
       .query("fallbackQueue")
-      .filter((q) => q.eq(q.field("status"), "triggered"))
+      .withIndex("by_status_fallbackAt", (q) => q.eq("status", "triggered"))
       .take(batchSize);
 
     return triggered.map((f) => ({
