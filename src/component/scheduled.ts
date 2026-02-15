@@ -9,7 +9,6 @@
 
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server.js";
-import { scheduledNotificationValidator } from "./validators.js";
 
 /**
  * Schedule a notification for future delivery.
@@ -60,7 +59,32 @@ export const getPendingScheduledNotifications = internalQuery({
   args: {
     batchSize: v.optional(v.number()),
   },
-  returns: v.array(scheduledNotificationValidator),
+  returns: v.array(
+    v.object({
+      _id: v.id("scheduledNotifications"),
+      _creationTime: v.number(),
+      tenantId: v.optional(v.string()),
+      userId: v.string(),
+      event: v.string(),
+      category: v.optional(v.string()),
+      title: v.string(),
+      body: v.string(),
+      data: v.optional(v.any()),
+      channels: v.any(),
+      scheduledFor: v.number(),
+      transactional: v.optional(v.boolean()),
+      deduplicationKey: v.optional(v.string()),
+      status: v.union(
+        v.literal("pending"),
+        v.literal("processing"),
+        v.literal("sent"),
+        v.literal("failed"),
+        v.literal("cancelled"),
+      ),
+      error: v.optional(v.string()),
+      processedAt: v.optional(v.number()),
+    }),
+  ),
   handler: async (ctx, args) => {
     const batchSize = args.batchSize ?? 100;
     const now = Date.now();
@@ -184,7 +208,32 @@ export const getScheduledNotifications = internalQuery({
       ),
     ),
   },
-  returns: v.array(scheduledNotificationValidator),
+  returns: v.array(
+    v.object({
+      _id: v.id("scheduledNotifications"),
+      _creationTime: v.number(),
+      tenantId: v.optional(v.string()),
+      userId: v.string(),
+      event: v.string(),
+      category: v.optional(v.string()),
+      title: v.string(),
+      body: v.string(),
+      data: v.optional(v.any()),
+      channels: v.any(),
+      scheduledFor: v.number(),
+      transactional: v.optional(v.boolean()),
+      deduplicationKey: v.optional(v.string()),
+      status: v.union(
+        v.literal("pending"),
+        v.literal("processing"),
+        v.literal("sent"),
+        v.literal("failed"),
+        v.literal("cancelled"),
+      ),
+      error: v.optional(v.string()),
+      processedAt: v.optional(v.number()),
+    }),
+  ),
   handler: async (ctx, args) => {
     if (args.status) {
       return await ctx.db
