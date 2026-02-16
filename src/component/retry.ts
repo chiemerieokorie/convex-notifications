@@ -9,7 +9,7 @@
 
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server.js";
-import { retryQueueValidator } from "./validators.js";
+import { channelNameValidator, retryQueueValidator } from "./validators.js";
 
 /**
  * Default retry configuration
@@ -39,7 +39,7 @@ export const queueRetry = internalMutation({
   args: {
     notificationId: v.id("notifications"),
     deliveryLogId: v.id("deliveryLog"),
-    channel: v.string(),
+    channel: channelNameValidator,
     rendered: v.any(),
     error: v.string(),
     maxAttempts: v.optional(v.number()),

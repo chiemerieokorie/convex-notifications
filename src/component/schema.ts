@@ -1,6 +1,13 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+const channelName = v.union(
+  v.literal("inbox"),
+  v.literal("email"),
+  v.literal("push"),
+  v.literal("sms"),
+);
+
 export default defineSchema({
   notifications: defineTable({
     tenantId: v.optional(v.string()),
@@ -27,7 +34,7 @@ export default defineSchema({
       v.literal("event"),
     ),
     key: v.optional(v.string()),
-    channel: v.string(),
+    channel: channelName,
     enabled: v.boolean(),
   })
     .index("by_userId", ["userId"])
@@ -45,7 +52,7 @@ export default defineSchema({
   deliveryLog: defineTable({
     tenantId: v.optional(v.string()),
     notificationId: v.id("notifications"),
-    channel: v.string(),
+    channel: channelName,
     status: v.union(
       v.literal("pending"),
       v.literal("sent"),
@@ -112,7 +119,7 @@ export default defineSchema({
     tenantId: v.optional(v.string()),
     notificationId: v.id("notifications"),
     deliveryLogId: v.id("deliveryLog"),
-    channel: v.string(),
+    channel: channelName,
     attempt: v.number(),
     maxAttempts: v.number(),
     nextRetryAt: v.number(),
@@ -138,8 +145,8 @@ export default defineSchema({
     tenantId: v.optional(v.string()),
     notificationId: v.id("notifications"),
     userId: v.string(),
-    fromChannel: v.string(), // e.g., "push"
-    toChannel: v.string(), // e.g., "email"
+    fromChannel: channelName, // e.g., "push"
+    toChannel: channelName, // e.g., "email"
     fallbackAt: v.number(), // When to trigger fallback
     status: v.union(
       v.literal("pending"),

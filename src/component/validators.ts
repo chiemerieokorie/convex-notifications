@@ -10,6 +10,13 @@ import { v } from "convex/values";
 
 // --- Shared field definitions (reused by validators) ---
 
+export const channelNameValidator = v.union(
+  v.literal("inbox"),
+  v.literal("email"),
+  v.literal("push"),
+  v.literal("sms"),
+);
+
 const levelValidator = v.union(
   v.literal("global"),
   v.literal("category"),
@@ -67,7 +74,7 @@ export const preferenceValidator = v.object({
   userId: v.string(),
   level: levelValidator,
   key: v.optional(v.string()),
-  channel: v.string(),
+  channel: channelNameValidator,
   enabled: v.boolean(),
 });
 
@@ -76,7 +83,7 @@ export const deliveryLogValidator = v.object({
   _creationTime: v.number(),
   tenantId: v.optional(v.string()),
   notificationId: v.id("notifications"),
-  channel: v.string(),
+  channel: channelNameValidator,
   status: deliveryStatusValidator,
   error: v.optional(v.string()),
   sentAt: v.optional(v.number()),
@@ -109,7 +116,7 @@ export const retryQueueValidator = v.object({
   tenantId: v.optional(v.string()),
   notificationId: v.id("notifications"),
   deliveryLogId: v.id("deliveryLog"),
-  channel: v.string(),
+  channel: channelNameValidator,
   attempt: v.number(),
   maxAttempts: v.number(),
   nextRetryAt: v.number(),
@@ -124,8 +131,8 @@ export const fallbackQueueValidator = v.object({
   tenantId: v.optional(v.string()),
   notificationId: v.id("notifications"),
   userId: v.string(),
-  fromChannel: v.string(),
-  toChannel: v.string(),
+  fromChannel: channelNameValidator,
+  toChannel: channelNameValidator,
   fallbackAt: v.number(),
   status: fallbackStatusValidator,
   triggeredAt: v.optional(v.number()),
