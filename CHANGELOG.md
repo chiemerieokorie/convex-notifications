@@ -1,3 +1,9 @@
+## [1.7.0](https://github.com/chiemerieokorie/convex-notifications/compare/v1.6.0...v1.7.0) (2026-02-16)
+
+### Features
+
+* replace channel string with typed ChannelName union ([dd89655](https://github.com/chiemerieokorie/convex-notifications/commit/dd89655fa16887751f5821ac06b5945df71eadcd))
+
 ## [1.6.0](https://github.com/chiemerieokorie/convex-notifications/compare/v1.5.1...v1.6.0) (2026-02-16)
 
 ### Features
