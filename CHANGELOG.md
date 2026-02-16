@@ -1,3 +1,9 @@
+## [1.7.1](https://github.com/chiemerieokorie/convex-notifications/compare/v1.7.0...v1.7.1) (2026-02-16)
+
+### Bug Fixes
+
+* remove explicit _creationTime from index definitions ([c6de133](https://github.com/chiemerieokorie/convex-notifications/commit/c6de133f4dd88966c597af01880312e61e35e43d))
+
 ## [1.7.0](https://github.com/chiemerieokorie/convex-notifications/compare/v1.6.0...v1.7.0) (2026-02-16)
 
 ### Features
