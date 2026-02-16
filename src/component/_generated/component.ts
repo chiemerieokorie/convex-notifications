@@ -65,8 +65,8 @@ export type ComponentApi<
     markAllRead: FunctionReference<
       "mutation",
       "internal",
-      { tenantId?: string; userId: string },
-      null,
+      { tenantId?: string; userId: string; batchSize?: number },
+      { marked: number; hasMore: boolean },
       Name
     >;
     markRead: FunctionReference<

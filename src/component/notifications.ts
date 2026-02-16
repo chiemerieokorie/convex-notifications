@@ -235,8 +235,22 @@ export const processRetryQueue = internalMutation({
     readyForRetry: v.array(v.id("retryQueue")),
   }),
   handler: async (ctx, args) => {
-    const batchSize = args.batchSize ?? 50;
+    const batchSize = args.batchSize ?? 200;
     const now = Date.now();
+    const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+
+    // Reset stale "processing" entries back to pending.
+    // Uses nextRetryAt as a proxy for when the entry was last touched.
+    const stale = await ctx.db
+      .query("retryQueue")
+      .withIndex("by_status_nextRetryAt", (q) =>
+        q.eq("status", "processing").lte("nextRetryAt", now - STALE_THRESHOLD_MS),
+      )
+      .take(batchSize);
+
+    for (const entry of stale) {
+      await ctx.db.patch(entry._id, { status: "pending", nextRetryAt: now });
+    }
 
     // Get pending retries that are ready
     const pending = await ctx.db
@@ -258,5 +272,41 @@ export const processRetryQueue = internalMutation({
       processed: pending.length,
       readyForRetry,
     };
+  },
+});
+
+/**
+ * Clean up completed retry queue entries older than 7 days.
+ * Removes entries with status "succeeded" or "exhausted" to prevent table bloat.
+ */
+export const cleanupRetryQueue = internalMutation({
+  args: {
+    batchSize: v.optional(v.number()),
+  },
+  returns: v.object({
+    deleted: v.number(),
+    hasMore: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    const batchSize = args.batchSize ?? 500;
+    const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000; // 7 days
+    let deleted = 0;
+
+    for (const status of ["succeeded", "exhausted"] as const) {
+      if (deleted >= batchSize) break;
+      const entries = await ctx.db
+        .query("retryQueue")
+        .withIndex("by_status_nextRetryAt", (q) => q.eq("status", status))
+        .take(batchSize - deleted + 1);
+
+      for (const entry of entries) {
+        if (entry._creationTime < cutoff && deleted < batchSize) {
+          await ctx.db.delete(entry._id);
+          deleted++;
+        }
+      }
+    }
+
+    return { deleted, hasMore: deleted >= batchSize };
   },
 });

@@ -216,3 +216,39 @@ export const getTriggeredFallbacks = internalQuery({
     }));
   },
 });
+
+/**
+ * Clean up completed fallback queue entries older than 7 days.
+ * Removes entries with status "cancelled" or "triggered" to prevent table bloat.
+ */
+export const cleanupFallbackQueue = internalMutation({
+  args: {
+    batchSize: v.optional(v.number()),
+  },
+  returns: v.object({
+    deleted: v.number(),
+    hasMore: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    const batchSize = args.batchSize ?? 500;
+    const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000; // 7 days
+    let deleted = 0;
+
+    for (const status of ["cancelled", "triggered"] as const) {
+      if (deleted >= batchSize) break;
+      const entries = await ctx.db
+        .query("fallbackQueue")
+        .withIndex("by_status_fallbackAt", (q) => q.eq("status", status))
+        .take(batchSize - deleted + 1);
+
+      for (const entry of entries) {
+        if (entry._creationTime < cutoff && deleted < batchSize) {
+          await ctx.db.delete(entry._id);
+          deleted++;
+        }
+      }
+    }
+
+    return { deleted, hasMore: deleted >= batchSize };
+  },
+});

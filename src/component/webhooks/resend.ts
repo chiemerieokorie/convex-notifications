@@ -200,6 +200,11 @@ export const resendWebhook = httpAction(async (ctx, request) => {
     if (!isValid) {
       return new Response("Invalid signature", { status: 401 });
     }
+  } else {
+    console.warn(
+      "[notifications] RESEND_WEBHOOK_SECRET not set — webhook signature verification is disabled. " +
+      "This is insecure in production. Set the environment variable to enable verification.",
+    );
   }
 
   // Parse the webhook payload

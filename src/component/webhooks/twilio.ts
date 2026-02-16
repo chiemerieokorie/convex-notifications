@@ -152,6 +152,11 @@ export const twilioWebhook = httpAction(async (ctx, request) => {
     if (!isValid) {
       return new Response("Invalid signature", { status: 401 });
     }
+  } else {
+    console.warn(
+      "[notifications] TWILIO_AUTH_TOKEN not set — webhook signature verification is disabled. " +
+      "This is insecure in production. Set the environment variable to enable verification.",
+    );
   }
 
   const messageSid = params["MessageSid"] ?? null;

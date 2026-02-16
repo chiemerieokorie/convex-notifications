@@ -29,10 +29,14 @@ export const scheduleNotification = internalMutation({
   },
   returns: v.id("scheduledNotifications"),
   handler: async (ctx, args) => {
-    // Validate scheduledFor is in the future
+    // Validate scheduledFor is in the future but not too far out
     const now = Date.now();
+    const MAX_SCHEDULE_MS = 365 * 24 * 60 * 60 * 1000; // 1 year
     if (args.scheduledFor <= now) {
       throw new Error("scheduledFor must be in the future");
+    }
+    if (args.scheduledFor > now + MAX_SCHEDULE_MS) {
+      throw new Error("scheduledFor cannot be more than 1 year in the future");
     }
 
     return await ctx.db.insert("scheduledNotifications", {

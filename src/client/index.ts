@@ -247,10 +247,16 @@ export class Notifications {
 
   async markAllRead(ctx: RunMutationCtx) {
     const { userId, tenantId } = await this.resolveAuth(ctx);
-    return await ctx.runMutation(this.component.inbox.markAllRead, {
-      tenantId,
-      userId,
-    });
+    // Loop in batches to avoid transaction limits with large unread counts
+    let hasMore = true;
+    while (hasMore) {
+      const result = await ctx.runMutation(this.component.inbox.markAllRead, {
+        tenantId,
+        userId,
+      });
+      hasMore = result.hasMore;
+    }
+    return null;
   }
 
   async archive(ctx: RunMutationCtx, notificationId: NotificationId) {
@@ -354,9 +360,13 @@ export class Notifications {
         ? args.scheduledFor.getTime()
         : args.scheduledFor;
 
-    // Validate scheduledFor is in the future
+    // Validate scheduledFor is in the future but not too far out
+    const MAX_SCHEDULE_MS = 365 * 24 * 60 * 60 * 1000; // 1 year
     if (scheduledFor <= Date.now()) {
       throw new Error("scheduledFor must be in the future");
+    }
+    if (scheduledFor > Date.now() + MAX_SCHEDULE_MS) {
+      throw new Error("scheduledFor cannot be more than 1 year in the future");
     }
 
     // Render inbox template for storage
@@ -604,9 +614,8 @@ export class Notifications {
           );
         } else {
           // Log stub message for development
-          console.log(
-            `[notifications] email dispatch (no client configured):`,
-            renderedEmail,
+          console.warn(
+            `[notifications] Email client not configured — skipping dispatch. Configure options.clients.email to enable.`,
           );
           result = {
             channel: "email",
@@ -637,9 +646,8 @@ export class Notifications {
             pushConfig?.allowUnregisteredTokens ?? true,
           );
         } else {
-          console.log(
-            `[notifications] push dispatch (no client configured):`,
-            renderedPush,
+          console.warn(
+            `[notifications] Push client not configured — skipping dispatch. Configure options.clients.push to enable.`,
           );
           result = {
             channel: "push",
@@ -704,9 +712,8 @@ export class Notifications {
                 error: "Scheduled for async delivery",
               };
             } else {
-              console.log(
+              console.warn(
                 `[notifications] SMS requires action context. Configure smsDispatchAction for async delivery.`,
-                renderedSms,
               );
               result = {
                 channel: "sms",
@@ -717,9 +724,8 @@ export class Notifications {
             }
           }
         } else {
-          console.log(
-            `[notifications] sms dispatch (no client configured):`,
-            renderedSms,
+          console.warn(
+            `[notifications] SMS client not configured — skipping dispatch. Configure options.clients.sms to enable.`,
           );
           result = {
             channel: "sms",
