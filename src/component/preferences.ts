@@ -1,13 +1,27 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server.js";
-import { channelNameValidator, preferenceValidator } from "./validators.js";
-
+import { channelNameValidator } from "./validators.js";
 export const getPreferences = internalQuery({
   args: {
     tenantId: v.optional(v.string()),
     userId: v.string(),
   },
-  returns: v.array(preferenceValidator),
+  returns: v.array(
+    v.object({
+      _id: v.id("preferences"),
+      _creationTime: v.number(),
+      tenantId: v.optional(v.string()),
+      userId: v.string(),
+      level: v.union(
+        v.literal("global"),
+        v.literal("category"),
+        v.literal("event"),
+      ),
+      key: v.optional(v.string()),
+      channel: v.string(),
+      enabled: v.boolean(),
+    }),
+  ),
   handler: async (ctx, args) => {
     const q = args.tenantId !== undefined
       ? ctx.db

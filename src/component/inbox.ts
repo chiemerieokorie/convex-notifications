@@ -2,7 +2,6 @@ import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import { paginator } from "convex-helpers/server/pagination";
 import { internalMutation, internalQuery } from "./_generated/server.js";
-import { notificationValidator } from "./validators.js";
 import schema from "./schema.js";
 
 export const list = internalQuery({
@@ -12,7 +11,21 @@ export const list = internalQuery({
     paginationOpts: paginationOptsValidator,
   },
   returns: v.object({
-    page: v.array(notificationValidator),
+    page: v.array(
+      v.object({
+        _id: v.id("notifications"),
+        _creationTime: v.number(),
+        tenantId: v.optional(v.string()),
+        userId: v.string(),
+        event: v.string(),
+        title: v.string(),
+        body: v.string(),
+        data: v.optional(v.any()),
+        readAt: v.optional(v.number()),
+        archivedAt: v.optional(v.number()),
+        transactional: v.optional(v.boolean()),
+      }),
+    ),
     isDone: v.boolean(),
     continueCursor: v.string(),
   }),
