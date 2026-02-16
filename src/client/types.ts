@@ -140,8 +140,14 @@ export type NotificationsOptions = {
    * Internal action reference for dispatching SMS.
    * SMS requires action context (for Twilio API calls).
    * If not provided, SMS dispatch will be logged but not sent.
+   *
+   * The action receives `{ notificationId: string; rendered: RenderedSms }`.
    */
-  smsDispatchAction?: FunctionReference<"action", "internal">;
+  smsDispatchAction?: FunctionReference<
+    "action",
+    "internal",
+    { notificationId: string; rendered: { from: string; to: string; body: string } }
+  >;
 };
 
 // Template types
@@ -183,7 +189,8 @@ export type SmsTemplate<T> = {
 };
 
 export type ChannelTemplates<T> = {
-  inbox?: InboxTemplate<T>;
+  /** Inbox template is required — all notifications appear in the inbox. */
+  inbox: InboxTemplate<T>;
   email?: EmailTemplate<T>;
   push?: PushTemplate<T>;
   sms?: SmsTemplate<T>;
@@ -194,6 +201,77 @@ export type NotificationDefinition<T> = {
   dataValidator: Validator<T, "required", string>;
   category?: string;
   channels: ChannelTemplates<T>;
+};
+
+// --- Consumer-facing document types ---
+// These represent the shapes returned by queries and hooks.
+// Use `string` for `_id` fields since consumers don't own the component's tables.
+
+export type Notification = {
+  _id: string;
+  _creationTime: number;
+  tenantId?: string;
+  userId: string;
+  event: string;
+  title: string;
+  body: string;
+  data?: unknown;
+  readAt?: number;
+  archivedAt?: number;
+  transactional?: boolean;
+};
+
+export type Preference = {
+  _id: string;
+  _creationTime: number;
+  tenantId?: string;
+  userId: string;
+  level: "global" | "category" | "event";
+  key?: string;
+  channel: string;
+  enabled: boolean;
+};
+
+export type DeliveryLog = {
+  _id: string;
+  _creationTime: number;
+  tenantId?: string;
+  notificationId: string;
+  channel: string;
+  status: "pending" | "sent" | "delivered" | "failed";
+  error?: string;
+  sentAt?: number;
+  metadata?: unknown;
+  externalId?: string;
+};
+
+export type PushToken = {
+  _id: string;
+  _creationTime: number;
+  tenantId?: string;
+  userId: string;
+  token: string;
+  platform?: "ios" | "android" | "web";
+  deviceId?: string;
+};
+
+export type ScheduledNotification = {
+  _id: string;
+  _creationTime: number;
+  tenantId?: string;
+  userId: string;
+  event: string;
+  category?: string;
+  title: string;
+  body: string;
+  data?: unknown;
+  channels: unknown;
+  scheduledFor: number;
+  transactional?: boolean;
+  deduplicationKey?: string;
+  status: "pending" | "processing" | "sent" | "failed" | "cancelled";
+  error?: string;
+  processedAt?: number;
 };
 
 // Delivery result types

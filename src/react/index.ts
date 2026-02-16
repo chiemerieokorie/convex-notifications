@@ -9,6 +9,15 @@ import {
 } from "react";
 import { useQuery, usePaginatedQuery } from "convex/react";
 import type { FunctionReference } from "convex/server";
+import type {
+  Notification,
+  Preference,
+  PushToken,
+  DeliveryLog,
+} from "../client/types.js";
+
+// Re-export consumer types for convenience
+export type { Notification, Preference, PushToken, DeliveryLog } from "../client/types.js";
 
 // Type for any query function reference
 type AnyQueryRef = FunctionReference<"query", "public">;
@@ -103,7 +112,12 @@ export function NotificationsProvider({
 export function useNotifications(
   listFn?: AnyQueryRef,
   opts?: { initialNumItems?: number },
-) {
+): {
+  notifications: Notification[];
+  loadMore: (numItems: number) => void;
+  status: "LoadingFirstPage" | "CanLoadMore" | "LoadingMore" | "Exhausted";
+  isLoading: boolean;
+} {
   const context = useContext(NotificationsContext);
   const fn = listFn ?? context?.api.list;
   if (!fn) {
@@ -117,7 +131,7 @@ export function useNotifications(
   });
 
   return {
-    notifications: result.results,
+    notifications: result.results as Notification[],
     loadMore: result.loadMore,
     status: result.status,
     isLoading: result.isLoading,
@@ -168,7 +182,7 @@ export function useUnreadCount(countFn?: AnyQueryRef): number {
  * }
  * ```
  */
-export function usePreferences(prefsFn?: AnyQueryRef) {
+export function usePreferences(prefsFn?: AnyQueryRef): Preference[] {
   const context = useContext(NotificationsContext);
   const fn = prefsFn ?? context?.api.getPreferences;
   if (!fn) {
@@ -177,7 +191,7 @@ export function usePreferences(prefsFn?: AnyQueryRef) {
     );
   }
 
-  return useQuery(fn, {}) ?? [];
+  return (useQuery(fn, {}) ?? []) as Preference[];
 }
 
 /**
@@ -195,7 +209,7 @@ export function usePreferences(prefsFn?: AnyQueryRef) {
  * }
  * ```
  */
-export function usePushTokens(tokensFn?: AnyQueryRef) {
+export function usePushTokens(tokensFn?: AnyQueryRef): PushToken[] {
   const context = useContext(NotificationsContext);
   const fn = tokensFn ?? context?.api.getPushTokens;
   if (!fn) {
@@ -204,7 +218,7 @@ export function usePushTokens(tokensFn?: AnyQueryRef) {
     );
   }
 
-  return useQuery(fn, {}) ?? [];
+  return (useQuery(fn, {}) ?? []) as PushToken[];
 }
 
 /**
@@ -227,7 +241,7 @@ export function usePushTokens(tokensFn?: AnyQueryRef) {
 export function useDeliveryLogs(
   notificationId: string,
   logsFn?: AnyQueryRef,
-) {
+): DeliveryLog[] {
   const context = useContext(NotificationsContext);
   const fn = logsFn ?? context?.api.getDeliveryLogs;
   if (!fn) {
@@ -236,5 +250,5 @@ export function useDeliveryLogs(
     );
   }
 
-  return useQuery(fn, { notificationId }) ?? [];
+  return (useQuery(fn, { notificationId }) ?? []) as DeliveryLog[];
 }
