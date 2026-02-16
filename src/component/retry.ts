@@ -165,10 +165,14 @@ export const markRetryFailed = internalMutation({
     const nextAttempt = retry.attempt + 1;
 
     if (nextAttempt > retry.maxAttempts) {
-      // Max attempts reached
+      // Max attempts reached — mark retry as exhausted and delivery as failed
       await ctx.db.patch(args.id, {
         status: "exhausted",
         lastError: args.error,
+      });
+      await ctx.db.patch(retry.deliveryLogId, {
+        status: "failed",
+        error: `Exhausted after ${retry.maxAttempts} attempts: ${args.error}`,
       });
       return { willRetry: false, exhausted: true };
     }

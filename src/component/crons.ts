@@ -22,7 +22,7 @@ crons.interval(
   "process scheduled notifications",
   { minutes: 1 },
   internal.notifications.processScheduledNotifications,
-  { batchSize: 50 },
+  { batchSize: 200 },
 );
 
 /**
@@ -33,7 +33,7 @@ crons.interval(
   "process retry queue",
   { minutes: 1 },
   internal.notifications.processRetryQueue,
-  { batchSize: 50 },
+  { batchSize: 200 },
 );
 
 /**
@@ -45,7 +45,29 @@ crons.interval(
   "process channel fallbacks",
   { minutes: 1 },
   internal.fallback.processFallbacks,
-  { batchSize: 50 },
+  { batchSize: 200 },
+);
+
+/**
+ * Clean up completed retry queue entries every 6 hours.
+ * Removes "succeeded" and "exhausted" entries older than 7 days.
+ */
+crons.interval(
+  "cleanup completed retries",
+  { hours: 6 },
+  internal.notifications.cleanupRetryQueue,
+  { batchSize: 500 },
+);
+
+/**
+ * Clean up completed fallback queue entries every 6 hours.
+ * Removes "cancelled" and "triggered" entries older than 7 days.
+ */
+crons.interval(
+  "cleanup completed fallbacks",
+  { hours: 6 },
+  internal.fallback.cleanupFallbackQueue,
+  { batchSize: 500 },
 );
 
 export default crons;
