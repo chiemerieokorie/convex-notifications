@@ -1,3 +1,9 @@
+## [1.8.0](https://github.com/chiemerieokorie/convex-notifications/compare/v1.7.2...v1.8.0) (2026-02-16)
+
+### Features
+
+* add consumer-facing document types and typed api() returns ([1ebf003](https://github.com/chiemerieokorie/convex-notifications/commit/1ebf0031d0c930b1a0921ceea9bde2b653f22902))
+
 ## [1.7.2](https://github.com/chiemerieokorie/convex-notifications/compare/v1.7.1...v1.7.2) (2026-02-16)
 
 ### Bug Fixes
