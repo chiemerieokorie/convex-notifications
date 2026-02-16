@@ -277,6 +277,25 @@ export type ScheduledNotification = {
   processedAt?: number;
 };
 
+// --- Branded ID types ---
+// Nominal typing to prevent mixing up different ID types at compile time.
+
+export type NotificationId = string & { readonly __brand: "NotificationId" };
+export type DeliveryLogId = string & { readonly __brand: "DeliveryLogId" };
+export type ScheduledNotificationId = string & { readonly __brand: "ScheduledNotificationId" };
+
+export function asNotificationId(id: string): NotificationId {
+  return id as NotificationId;
+}
+
+export function asDeliveryLogId(id: string): DeliveryLogId {
+  return id as DeliveryLogId;
+}
+
+export function asScheduledNotificationId(id: string): ScheduledNotificationId {
+  return id as ScheduledNotificationId;
+}
+
 // Delivery result types
 export type DeliveryResult = {
   channel: ChannelName;
@@ -286,6 +305,6 @@ export type DeliveryResult = {
 };
 
 export type SendResult = {
-  notificationId: string;
+  notificationId: NotificationId;
   deliveries: DeliveryResult[];
 };
