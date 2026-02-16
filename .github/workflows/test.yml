@@ -36,3 +36,7 @@ jobs:
           npm run test
           npm run typecheck
           npm run lint
+      - name: Validate package exports
+        run: npm run check:package
+      - name: Consumer integration test
+        run: npm run test:consumer

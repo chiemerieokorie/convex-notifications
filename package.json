@@ -34,6 +34,11 @@
     "test:watch": "vitest --typecheck --clearScreen false",
     "test:debug": "vitest --inspect-brk --no-file-parallelism",
     "test:coverage": "vitest run --coverage --coverage.reporter=text",
+    "check:exports": "publint",
+    "check:types": "attw --pack . --profile esm-only",
+    "check:package": "npm run check:exports && npm run check:types",
+    "test:consumer": "bash consumer-test/run.sh",
+    "test:all": "npm run test && npm run check:package && npm run test:consumer",
     "prepublishOnly": "npm run build",
     "semantic-release": "semantic-release"
   },
@@ -76,11 +81,11 @@
     }
   },
   "peerDependencies": {
-    "convex": "^1.31.6",
-    "react": "^18.3.1 || ^19.0.0",
     "@convex-dev/expo-push-notifications": ">=0.3.0",
     "@convex-dev/resend": ">=0.2.0",
-    "@convex-dev/twilio": ">=0.2.0"
+    "@convex-dev/twilio": ">=0.2.0",
+    "convex": "^1.31.6",
+    "react": "^18.3.1 || ^19.0.0"
   },
   "peerDependenciesMeta": {
     "@convex-dev/expo-push-notifications": {
@@ -97,10 +102,11 @@
     }
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.2",
+    "@convex-dev/eslint-plugin": "^1.1.1",
     "@convex-dev/expo-push-notifications": "^0.3.1",
     "@convex-dev/resend": "^0.2.3",
     "@convex-dev/twilio": "^0.2.1",
-    "@convex-dev/eslint-plugin": "^1.1.1",
     "@edge-runtime/vm": "^5.0.0",
     "@eslint/eslintrc": "^3.3.3",
     "@eslint/js": "9.39.2",
@@ -124,6 +130,7 @@
     "path-exists-cli": "2.0.0",
     "pkg-pr-new": "^0.0.62",
     "prettier": "3.8.1",
+    "publint": "^0.3.17",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "semantic-release": "^25.0.2",
@@ -135,9 +142,9 @@
   "types": "./dist/client/index.d.ts",
   "module": "./dist/client/index.js",
   "dependencies": {
-    "@convex-dev/expo-push-notifications": "^0.3.1",
-    "@convex-dev/resend": "^0.2.3",
-    "@convex-dev/twilio": "^0.2.1",
+    "@convex-dev/expo-push-notifications": ">=0.3.0",
+    "@convex-dev/resend": ">=0.2.0",
+    "@convex-dev/twilio": ">=0.2.0",
     "convex-helpers": "^0.1.111"
   }
 }

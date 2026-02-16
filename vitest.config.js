@@ -12,7 +12,7 @@ export default defineConfig({
   },
   test: {
     environment: "edge-runtime",
-    exclude: [".examples/**", "node_modules/**"],
+    exclude: [".examples/**", "node_modules/**", "consumer-test/**"],
     typecheck: {
       tsconfig: "./tsconfig.test.json",
     },
