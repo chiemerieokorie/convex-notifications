@@ -1,3 +1,10 @@
+## [1.9.1](https://github.com/chiemerieokorie/convex-notifications/compare/v1.9.0...v1.9.1) (2026-02-16)
+
+### Bug Fixes
+
+* address consumer-test review issues ([91a8a8d](https://github.com/chiemerieokorie/convex-notifications/commit/91a8a8d525265079b86ab84cc4bbec47cda4f8a8))
+* revert root package-lock.json mutation in consumer test cleanup ([03c9f08](https://github.com/chiemerieokorie/convex-notifications/commit/03c9f08e294c0e52f22c885a726031a094d2a14a))
+
 ## [1.9.0](https://github.com/chiemerieokorie/convex-notifications/compare/v1.8.0...v1.9.0) (2026-02-16)
 
 ### Features
