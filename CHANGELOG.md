@@ -1,3 +1,9 @@
+## [1.7.2](https://github.com/chiemerieokorie/convex-notifications/compare/v1.7.1...v1.7.2) (2026-02-16)
+
+### Bug Fixes
+
+* inline component returns validators for typed codegen output ([9328092](https://github.com/chiemerieokorie/convex-notifications/commit/93280927e178123600969aa6c6893f38dcb6dd55))
+
 ## [1.7.1](https://github.com/chiemerieokorie/convex-notifications/compare/v1.7.0...v1.7.1) (2026-02-16)
 
 ### Bug Fixes
