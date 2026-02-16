@@ -41,7 +41,13 @@ export type {
   RunQueryCtx,
   RunMutationCtx,
   RunActionCtx,
+  Notification,
+  Preference,
+  DeliveryLog,
+  PushToken,
+  ScheduledNotification,
 } from "./types.js";
+export type { RenderedEmail, RenderedPush, RenderedSms } from "./adapters.js";
 
 /**
  * Create a typed notification definition.
