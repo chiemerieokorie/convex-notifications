@@ -12,7 +12,11 @@ import type {
   AuthIdentity,
   ChannelConfig,
   ChannelName,
+  NotificationId,
+  DeliveryLogId,
+  ScheduledNotificationId,
 } from "./types.js";
+import { asNotificationId, asScheduledNotificationId } from "./types.js";
 import type { PushNotifications } from "@convex-dev/expo-push-notifications";
 import type { Resend } from "@convex-dev/resend";
 import type { Twilio } from "@convex-dev/twilio";
@@ -47,7 +51,11 @@ export type {
   DeliveryLog,
   PushToken,
   ScheduledNotification,
+  NotificationId,
+  DeliveryLogId,
+  ScheduledNotificationId,
 } from "./types.js";
+export { asNotificationId, asDeliveryLogId, asScheduledNotificationId } from "./types.js";
 export type { RenderedEmail, RenderedPush, RenderedSms } from "./adapters.js";
 
 // Consumer-safe return validators (use v.string() for _id, NOT v.id())
@@ -228,7 +236,7 @@ export class Notifications {
     return await ctx.runQuery(this.component.inbox.unreadCount, { tenantId, userId });
   }
 
-  async markRead(ctx: RunMutationCtx, notificationId: string) {
+  async markRead(ctx: RunMutationCtx, notificationId: NotificationId) {
     const { userId, tenantId } = await this.resolveAuth(ctx);
     return await ctx.runMutation(this.component.inbox.markRead, {
       tenantId,
@@ -245,7 +253,7 @@ export class Notifications {
     });
   }
 
-  async archive(ctx: RunMutationCtx, notificationId: string) {
+  async archive(ctx: RunMutationCtx, notificationId: NotificationId) {
     const { userId, tenantId } = await this.resolveAuth(ctx);
     return await ctx.runMutation(this.component.inbox.archive, {
       tenantId,
@@ -339,7 +347,7 @@ export class Notifications {
       transactional?: boolean;
       deduplicationKey?: string;
     },
-  ): Promise<{ scheduledNotificationId: string }> {
+  ): Promise<{ scheduledNotificationId: ScheduledNotificationId }> {
     const data = args.data;
     const scheduledFor =
       args.scheduledFor instanceof Date
@@ -381,7 +389,7 @@ export class Notifications {
       },
     );
 
-    return { scheduledNotificationId };
+    return { scheduledNotificationId: asScheduledNotificationId(scheduledNotificationId) };
   }
 
   /**
@@ -391,7 +399,7 @@ export class Notifications {
    */
   async cancelScheduled(
     ctx: RunMutationCtx,
-    scheduledNotificationId: string,
+    scheduledNotificationId: ScheduledNotificationId,
   ): Promise<boolean> {
     const { userId, tenantId } = await this.resolveAuth(ctx);
     return await ctx.runMutation(
@@ -521,7 +529,7 @@ export class Notifications {
       }
     }
 
-    return { notificationId, deliveries };
+    return { notificationId: asNotificationId(notificationId), deliveries };
   }
 
   /**
@@ -779,7 +787,7 @@ export class Notifications {
   async updateDeliveryStatus(
     ctx: RunMutationCtx,
     args: {
-      deliveryLogId: string;
+      deliveryLogId: DeliveryLogId;
       status: "sent" | "delivered" | "failed";
       error?: string;
       sentAt?: number;
@@ -796,7 +804,7 @@ export class Notifications {
   /**
    * Get delivery logs for a notification.
    */
-  async getDeliveryLogs(ctx: RunQueryCtx, notificationId: string) {
+  async getDeliveryLogs(ctx: RunQueryCtx, notificationId: NotificationId) {
     return await ctx.runQuery(this.component.delivery.getDeliveryLogs, {
       notificationId,
     });
@@ -852,7 +860,7 @@ export class Notifications {
         args: { notificationId: v.string() },
         returns: v.null(),
         handler: (ctx: RunMutationCtx, args: { notificationId: string }) =>
-          self.markRead(ctx, args.notificationId),
+          self.markRead(ctx, asNotificationId(args.notificationId)),
       }),
 
       /**
@@ -871,7 +879,7 @@ export class Notifications {
         args: { notificationId: v.string() },
         returns: v.null(),
         handler: (ctx: RunMutationCtx, args: { notificationId: string }) =>
-          self.archive(ctx, args.notificationId),
+          self.archive(ctx, asNotificationId(args.notificationId)),
       }),
 
       /**
@@ -962,7 +970,7 @@ export class Notifications {
         args: { notificationId: v.string() },
         returns: v.array(deliveryLogReturnValidator),
         handler: (ctx: RunQueryCtx, args: { notificationId: string }) =>
-          self.getDeliveryLogs(ctx, args.notificationId),
+          self.getDeliveryLogs(ctx, asNotificationId(args.notificationId)),
       }),
     };
   }

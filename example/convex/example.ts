@@ -323,7 +323,7 @@ export const cancelScheduledNotification = mutation({
     scheduledNotificationId: v.string(),
   },
   handler: async (ctx, args) => {
-    return notifications.cancelScheduled(ctx, args.scheduledNotificationId);
+    return notifications.cancelScheduled(ctx, args.scheduledNotificationId as import("convex-notifications").ScheduledNotificationId);
   },
 });
 
