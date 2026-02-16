@@ -11,7 +11,7 @@
     "registry": "https://registry.npmjs.org/",
     "provenance": true
   },
-  "version": "1.9.1",
+  "version": "1.9.2",
   "license": "Apache-2.0",
   "keywords": [
     "convex",

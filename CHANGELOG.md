@@ -1,3 +1,9 @@
+## [1.9.2](https://github.com/chiemerieokorie/convex-notifications/compare/v1.9.1...v1.9.2) (2026-02-16)
+
+### Bug Fixes
+
+* address production readiness issues found during audit ([d5229d4](https://github.com/chiemerieokorie/convex-notifications/commit/d5229d40a03220f0ec2efc99e962abed530bcd57))
+
 ## [1.9.1](https://github.com/chiemerieokorie/convex-notifications/compare/v1.9.0...v1.9.1) (2026-02-16)
 
 ### Bug Fixes
