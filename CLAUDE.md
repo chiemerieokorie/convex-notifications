@@ -253,6 +253,57 @@ These rules apply to all code in this component:
 - Use `schema.tables.tableName.validator` to derive return types
 - Extend validators with `_id` and `_creationTime` for complete return types
 
+## Component Boundary Rules
+
+This component runs in a sandboxed environment. Types get **flattened** at the boundary between component and consumer code. Understanding this boundary is critical to avoid shipping broken types.
+
+### What happens at the boundary
+
+| Inside component (`src/component/`) | What consumers see |
+|---|---|
+| `Id<"notifications">` | `string` |
+| `Doc<"notifications">` | `any` |
+| `Doc<"notifications">[]` | `any[]` |
+| `PaginationResult<Doc<"notifications">>` | `PaginationResult<any>` |
+| `v.id("notifications")` | Not usable — fails validation |
+
+**Key rule**: All consumer-facing types in `src/client/types.ts` must use `string` for `_id` fields, never `Id<"tableName">`. All validators in consumer-facing code must use `v.string()` for IDs, never `v.id("tableName")`.
+
+### The `ComponentApi` type
+
+`src/component/_generated/component.ts` contains the boundary-flattened `ComponentApi` type. This is:
+- **Auto-generated** by `npx convex codegen` (which requires a real Convex deployment)
+- **Pre-built into `dist/`** during `npm run build:codegen`
+- **What consumers actually import** — their `_generated/api.d.ts` contains `import("convex-notifications/_generated/component.js").ComponentApi<"notifications">`
+- Published packages **skip codegen regeneration** (`isPublishedPackage()` check) and use these pre-built types
+
+### Why local tests can miss boundary issues
+
+The example app and vitest resolve source types via:
+1. `@convex-dev/component-source` Vite condition — resolves package via source `.ts`, not built `dist/`
+2. Vitest aliases in `vitest.config.js` — maps `"convex-notifications"` to `src/client/index.ts`
+3. Shared `node_modules` with root — import paths that work locally may not work in isolation
+
+This means `Id<"tableName">` compiles fine locally but fails for consumers who get `string` from the boundary. **Always run `npm run test:all` to verify consumer compatibility.**
+
+### Codegen requirements
+
+- `npx convex codegen` calls `startPush()` to the Convex backend — **cannot run offline or in CI without deployment credentials**
+- After changing component function signatures, you must run `build:codegen` locally and commit the updated `src/component/_generated/component.ts`
+- The `consumer-test/_generated/` files are hand-crafted to match codegen output — if you update the `convex` dependency, these must be updated too
+
+### Adding or changing exports
+
+When adding a new export path to `package.json`:
+1. Add the export entry with both `types` and `default` fields
+2. Add a runtime import test in `consumer-test/src/imports.test.ts`
+3. Add type-level assertions in the appropriate `consumer-test/src/*.test.ts` file
+4. Run `npm run test:all` to verify
+
+### The `./test` export is special
+
+The `"./test"` export points to raw `./src/test.ts` using `import.meta.glob` (Vite API). It only works in Vite-powered environments (convex-test). It cannot be runtime-imported in standard Node.js and is intentionally skipped in consumer import tests.
+
 ## How to Add a New Notification Event
 
 1. Create a file in the consumer's `convex/notifications/` directory
