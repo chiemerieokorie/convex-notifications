@@ -40,3 +40,10 @@ jobs:
         run: npm run check:package
       - name: Consumer integration test
         run: npm run test:consumer
+      - name: Verify clean working directory
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Working directory is dirty after consumer test:"
+            git diff
+            exit 1
+          fi

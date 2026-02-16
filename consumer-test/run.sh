@@ -10,8 +10,9 @@ echo "=== Consumer Test ==="
 echo "→ Building package..."
 (cd "$ROOT_DIR" && npm run build)
 
-# 2. Pack tarball
+# 2. Pack tarball (clean stale tarballs first to avoid version mismatch)
 echo "→ Packing tarball..."
+rm -f "$SCRIPT_DIR"/convex-notifications-*.tgz
 (cd "$ROOT_DIR" && npm pack --pack-destination "$SCRIPT_DIR")
 
 # 3. Install from tarball (own node_modules, not root's)
@@ -39,5 +40,6 @@ npx vitest run
 # 7. Cleanup
 echo "→ Cleaning up..."
 rm -f "$SCRIPT_DIR"/convex-notifications-*.tgz
+git checkout -- "$SCRIPT_DIR/package.json" 2>/dev/null || true
 
 echo "=== All consumer tests passed ==="

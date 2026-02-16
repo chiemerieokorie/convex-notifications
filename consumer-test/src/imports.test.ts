@@ -25,12 +25,9 @@ test("react export resolves", async () => {
 // We verify the module is reachable (import starts) but expect the runtime error.
 // The type-level check (tsc) already validates this export path resolves.
 test("convex.config export is reachable", async () => {
-  try {
-    await import("convex-notifications/convex.config.js");
-  } catch (e: any) {
-    // Expected: component.use() throws outside Convex runtime
-    expect(e.message).toContain("componentDefinitionPath");
-  }
+  await expect(
+    import("convex-notifications/convex.config.js"),
+  ).rejects.toThrow(/componentDefinitionPath/);
 });
 
 test("channels export resolves", async () => {
@@ -38,6 +35,8 @@ test("channels export resolves", async () => {
   expect(mod.isValidEmail).toBeDefined();
   expect(mod.isValidPhoneNumber).toBeDefined();
   expect(mod.isValidPushToken).toBeDefined();
+  expect(mod.validateSmsBody).toBeDefined();
+  expect(mod.formatPhoneE164).toBeDefined();
 });
 
 test("webhooks export resolves", async () => {

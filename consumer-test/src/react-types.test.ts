@@ -11,15 +11,18 @@ import type {
   Preference,
   DeliveryLog,
   PushToken,
+  // Provider types
+  NotificationsApi,
 } from "convex-notifications/react";
 
-// Verify the hooks are importable
+// Verify the hooks and components are importable
 import {
   useNotifications,
   useUnreadCount,
   usePreferences,
   usePushTokens,
   useDeliveryLogs,
+  NotificationsProvider,
 } from "convex-notifications/react";
 
 // --- Verify document types resolve from react subpath ---
@@ -29,7 +32,15 @@ type _P = AssertStringId<Preference>;
 type _D = AssertStringId<DeliveryLog>;
 type _T = AssertStringId<PushToken>;
 
-// --- Verify hooks are defined ---
+// --- Type-only usage for provider types ---
+type _UseNotificationsApi = NotificationsApi;
+
+// --- Verify hooks and components are defined ---
+test("NotificationsProvider is exported", () => {
+  expect(NotificationsProvider).toBeDefined();
+  expect(typeof NotificationsProvider).toBe("function");
+});
+
 test("react hooks are exported", () => {
   expect(useNotifications).toBeDefined();
   expect(useUnreadCount).toBeDefined();
