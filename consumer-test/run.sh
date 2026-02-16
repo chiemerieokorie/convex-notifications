@@ -41,5 +41,6 @@ npx vitest run
 echo "→ Cleaning up..."
 rm -f "$SCRIPT_DIR"/convex-notifications-*.tgz
 git checkout -- "$SCRIPT_DIR/package.json" 2>/dev/null || true
+git checkout -- "$ROOT_DIR/package-lock.json" 2>/dev/null || true
 
 echo "=== All consumer tests passed ==="
