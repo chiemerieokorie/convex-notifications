@@ -1,3 +1,9 @@
+## [1.6.0](https://github.com/chiemerieokorie/convex-notifications/compare/v1.5.1...v1.6.0) (2026-02-16)
+
+### Features
+
+* type React hooks, add document types, require inbox channel ([d227d8b](https://github.com/chiemerieokorie/convex-notifications/commit/d227d8b17ef0f9dc757bd6491c1e765aea9e3fc6))
+
 ## [1.5.1](https://github.com/chiemerieokorie/convex-notifications/compare/v1.5.0...v1.5.1) (2026-02-15)
 
 ### Bug Fixes
