@@ -74,6 +74,9 @@ npm run test           # Run all tests with typecheck
 npm run test:watch     # Watch mode
 npm run test:coverage  # Coverage report
 npm run test:debug     # Node inspector
+npm run check:package  # Validate exports + type resolution (publint + attw)
+npm run test:consumer  # Consumer integration test (tarball install + tsc + vitest)
+npm run test:all       # All of the above
 ```
 
 ### Writing Tests
@@ -97,6 +100,18 @@ test("description", async () => {
 
 Each test directory has a `setup.test.ts` that initializes `convexTest()` and registers the component. Always use fake timers for deterministic results.
 
+### Consumer Integration Tests
+
+The `consumer-test/` directory is a standalone project that installs the package from an `npm pack` tarball with its own `node_modules`. This catches type and export issues that only surface for real consumers (the example app resolves source types via Vite aliases, masking `dist/` problems).
+
+It validates:
+- All `package.json` exports resolve at runtime
+- TypeScript types compile under both Bundler and Node16 moduleResolution
+- The `ComponentApi` boundary types work correctly (IDs are `string`, not `Id<"table">`)
+- The full consumer API pattern compiles: `Notifications` class, `createNotification`, `api()`, `send()`
+
+The `consumer-test/convex/_generated/` files are hand-crafted to match `npx convex codegen` output for `convex@1.31.7`. If you update the `convex` dependency version, update these files to match.
+
 ## Quality Checks
 
 Before submitting a PR, ensure all checks pass:
@@ -105,6 +120,14 @@ Before submitting a PR, ensure all checks pass:
 npm run typecheck      # TypeScript (main + example + example/convex)
 npm run lint           # ESLint
 npm run test           # Vitest + typecheck
+npm run check:package  # publint + attw export validation
+npm run test:consumer  # Consumer integration test
+```
+
+Or run everything at once:
+
+```sh
+npm run test:all       # All tests + package checks + consumer tests
 ```
 
 These same checks run in CI via `.github/workflows/test.yml`.

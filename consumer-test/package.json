@@ -1,0 +1,15 @@
+{
+  "name": "consumer-test",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "convex": "1.31.7",
+    "react": "^19.0.0",
+    "typescript": "5.9.3",
+    "vitest": "4.0.18"
+  },
+  "dependencies": {
+    "convex-notifications": "file:convex-notifications-1.9.0.tgz"
+  }
+}
