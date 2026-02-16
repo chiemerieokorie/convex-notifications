@@ -27,6 +27,9 @@ npm run build          # TypeScript compilation
 npm run build:codegen  # Convex codegen + build
 npm run lint           # ESLint
 npm run typecheck      # Check main + example + example/convex
+npm run check:package  # publint + attw (validate exports + type resolution)
+npm run test:consumer  # Consumer integration test (tarball install + tsc + vitest)
+npm run test:all       # All tests + package checks + consumer tests
 npm run alpha          # Publish prerelease to @alpha tag
 npm run release        # Publish patch to latest tag
 ```
@@ -167,6 +170,8 @@ await notification.send(ctx, {
 
 ## Testing
 
+### Unit & Integration Tests
+
 Tests use **Vitest** with **convex-test** in edge-runtime environment. Test files are colocated with source:
 
 ```
@@ -186,6 +191,53 @@ test("creates notification", async () => {
   const t = initConvexTest();
   // ... test logic
 });
+```
+
+### Consumer Integration Tests
+
+The example app resolves source types via `@convex-dev/component-source` Vite condition and vitest aliases — not the built `dist/` output. It shares `node_modules` with root and doesn't go through the real Convex codegen boundary (`Id<"tableName">` becomes `string`, `Doc<>[]` becomes `any[]` at the boundary). This means things can compile locally but break for real consumers.
+
+The consumer test infrastructure catches these issues with three layers:
+
+**Layer 1 — Package validation** (`npm run check:package`):
+- `publint` validates `exports` entries point to real files and ESM correctness
+- `attw --profile esm-only` validates type resolution under Node16 and Bundler moduleResolution
+
+**Layer 2 — Consumer test project** (`npm run test:consumer`):
+- `consumer-test/` is a standalone project with its **own `node_modules`**
+- Installs the package from `npm pack` tarball (same as a real `npm install`)
+- Hand-crafted `_generated/` files match real codegen output (codegen requires a deployment, but published packages use pre-built `ComponentApi` types)
+- Exercises the full consumer pattern: `Notifications` class, `createNotification`, `api()` re-exports, `send()` with mutation context
+- Runs `tsc` under both Bundler and Node16 moduleResolution
+- Runs vitest for runtime import verification of all export paths
+
+**Layer 3 — CI**: Both layers run in GitHub Actions after the main test suite.
+
+```
+consumer-test/
+  package.json              # Private, installs from tarball
+  tsconfig.json             # moduleResolution: "Bundler"
+  tsconfig.node16.json      # moduleResolution: "Node16"
+  vitest.config.ts          # NO aliases — real node_modules resolution
+  run.sh                    # Orchestration: build → pack → install → tsc → vitest
+  convex/
+    convex.config.ts        # app.use(notifications)
+    notifications.ts        # Full consumer API pattern
+    _generated/             # Hand-crafted to match codegen output (convex@1.31.7)
+      api.d.ts              # Imports ComponentApi from package — THE boundary test
+  src/
+    imports.test.ts         # Runtime: dynamic import of every export path
+    types.test.ts           # Compile-time: all exported types, branded IDs, boundary types
+    react-types.test.ts     # Compile-time: react hooks and component types
+```
+
+**Key file**: `consumer-test/convex/_generated/api.d.ts` imports `ComponentApi` from the tarball exactly as real codegen would. If the boundary types break, this file fails to compile.
+
+**Maintenance**: The `_generated/` files are pinned to `convex@1.31.7`. If the convex package changes its codegen format, these files need manual updating — the consumer tsc will fail immediately, alerting you.
+
+Run the full suite before publishing:
+```sh
+npm run test:all  # unit tests + package checks + consumer tests
 ```
 
 ## Convex Best Practices
@@ -231,3 +283,5 @@ When modifying the component:
 - [ ] Update ROADMAP.md if a milestone is completed
 - [ ] Update this file if architecture or patterns change
 - [ ] Ensure example app demonstrates new features
+- [ ] If changing exports or type signatures, run `npm run test:all` to verify consumer compatibility
+- [ ] If updating `convex` dependency version, update `consumer-test/package.json` and `_generated/` files to match

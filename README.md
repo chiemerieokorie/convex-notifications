@@ -386,4 +386,13 @@ npm run dev
 
 This starts parallel processes for the Convex backend, Vite frontend, and component build watcher. Changes to `src/` trigger automatic rebuilds.
 
+### Running Tests
+
+```sh
+npm run test           # Unit + integration tests
+npm run test:all       # Full suite: tests + export validation + consumer integration
+```
+
+`npm run test:all` includes consumer integration tests that install the package from a tarball and verify all exports, types, and the `ComponentApi` boundary work correctly for real consumers.
+
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full development guide.
