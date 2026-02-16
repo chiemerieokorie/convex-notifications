@@ -1,3 +1,9 @@
+## [1.9.0](https://github.com/chiemerieokorie/convex-notifications/compare/v1.8.0...v1.9.0) (2026-02-16)
+
+### Features
+
+* add branded ID types for compile-time safety ([be9a30b](https://github.com/chiemerieokorie/convex-notifications/commit/be9a30bdca465d990df8ea227244c4c832d22aaf))
+
 ## [1.8.0](https://github.com/chiemerieokorie/convex-notifications/compare/v1.7.2...v1.8.0) (2026-02-16)
 
 ### Features
