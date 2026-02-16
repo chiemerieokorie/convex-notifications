@@ -50,6 +50,55 @@ export type {
 } from "./types.js";
 export type { RenderedEmail, RenderedPush, RenderedSms } from "./adapters.js";
 
+// Consumer-safe return validators (use v.string() for _id, NOT v.id())
+const notificationReturnValidator = v.object({
+  _id: v.string(),
+  _creationTime: v.number(),
+  tenantId: v.optional(v.string()),
+  userId: v.string(),
+  event: v.string(),
+  title: v.string(),
+  body: v.string(),
+  data: v.optional(v.any()),
+  readAt: v.optional(v.number()),
+  archivedAt: v.optional(v.number()),
+  transactional: v.optional(v.boolean()),
+});
+
+const preferenceReturnValidator = v.object({
+  _id: v.string(),
+  _creationTime: v.number(),
+  tenantId: v.optional(v.string()),
+  userId: v.string(),
+  level: v.union(v.literal("global"), v.literal("category"), v.literal("event")),
+  key: v.optional(v.string()),
+  channel: v.string(),
+  enabled: v.boolean(),
+});
+
+const deliveryLogReturnValidator = v.object({
+  _id: v.string(),
+  _creationTime: v.number(),
+  tenantId: v.optional(v.string()),
+  notificationId: v.string(),
+  channel: v.string(),
+  status: v.union(v.literal("pending"), v.literal("sent"), v.literal("delivered"), v.literal("failed")),
+  error: v.optional(v.string()),
+  sentAt: v.optional(v.number()),
+  metadata: v.optional(v.any()),
+  externalId: v.optional(v.string()),
+});
+
+const pushTokenReturnValidator = v.object({
+  _id: v.string(),
+  _creationTime: v.number(),
+  tenantId: v.optional(v.string()),
+  userId: v.string(),
+  token: v.string(),
+  platform: v.optional(v.union(v.literal("ios"), v.literal("android"), v.literal("web"))),
+  deviceId: v.optional(v.string()),
+});
+
 /**
  * Create a typed notification definition.
  *
@@ -779,7 +828,7 @@ export class Notifications {
           paginationOpts: paginationOptsValidator,
         },
         returns: v.object({
-          page: v.array(v.any()),
+          page: v.array(notificationReturnValidator),
           isDone: v.boolean(),
           continueCursor: v.string(),
         }),
@@ -830,7 +879,7 @@ export class Notifications {
        */
       getPreferences: queryGeneric({
         args: {},
-        returns: v.array(v.any()),
+        returns: v.array(preferenceReturnValidator),
         handler: (ctx: RunQueryCtx) => self.getPreferences(ctx),
       }),
 
@@ -892,7 +941,7 @@ export class Notifications {
        */
       getPushTokens: queryGeneric({
         args: {},
-        returns: v.array(v.any()),
+        returns: v.array(pushTokenReturnValidator),
         handler: (ctx: RunQueryCtx) => self.getPushTokens(ctx),
       }),
 
@@ -911,7 +960,7 @@ export class Notifications {
        */
       getDeliveryLogs: queryGeneric({
         args: { notificationId: v.string() },
-        returns: v.array(v.any()),
+        returns: v.array(deliveryLogReturnValidator),
         handler: (ctx: RunQueryCtx, args: { notificationId: string }) =>
           self.getDeliveryLogs(ctx, args.notificationId),
       }),
